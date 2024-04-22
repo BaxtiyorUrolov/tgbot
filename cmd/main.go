@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"os/signal"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	_ "github.com/lib/pq"
+	"tgbot/bot"
+	"tgbot/config"
 )
 
 var db *sql.DB
@@ -22,52 +23,40 @@ type User struct {
 }
 
 func main() {
-	// PostgreSQL ma'lumotlar bazasi uchun bog'lanish sozlamalari
 	dbHost := "localhost"
 	dbPort := 5432
 	dbUser := "godb"
 	dbPassword := "0208"
 	dbName := "tgbot"
-
-	// PostgreSQL ma'lumotlar bazasiga bog'lanish
-	dbInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
-
-	var err error
-	db, err = sql.Open("postgres", dbInfo)
-	if err != nil {
-		log.Fatalf("Error opening database connection: %v", err)
-	}
-	defer db.Close()
-
-	// Ma'lumotlar bazasiga ulanishni tekshirish
-	if err = db.Ping(); err != nil {
-		log.Fatalf("Error connecting to database: %v", err)
-	}
-
-	// Telegram botini yaratish
 	botToken := "6588290150:AAEb0jDtup7apLatgxvWbCHmh2MgWX81_Xg"
-	bot, err := tgbotapi.NewBotAPI(botToken)
-	if err != nil {
-		log.Fatalf("Error creating new bot instance: %v", err)
+
+	// Setup database and bot
+	if err := config.Setup(dbHost, dbPort, dbUser, dbPassword, dbName, botToken); err != nil {
+		log.Fatalf("Error setting up configuration: %v", err)
 	}
 
-	// Assign the bot instance to the global variable
-	botInstance = bot
+	defer func() {
+		if err := config.GetDB().Close(); err != nil {
+			log.Printf("Error closing database connection: %v", err)
+		}
+	}()
 
-	// Interrupt va syscall signalini qabul qilish uchun context yaratish
+	botInstance := config.GetBot()
+	if botInstance == nil {
+		log.Fatal("Failed to get bot instance from config")
+	}
+
+	// Interrupt and syscall signal handling context
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	// Updates channel ochish
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates := bot.GetUpdatesChan(u)
+	updates := botInstance.GetUpdatesChan(u)
 
 	fmt.Println("Bot is now running. Press CTRL-C to exit.")
 
-	// Updatesni eshitish
 	for {
 		select {
 		case <-ctx.Done():
@@ -91,27 +80,40 @@ func main() {
 func handleStartCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 
-	if _, err := db.Exec(`INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, msg.From.ID); err != nil {
-		log.Printf("Error inserting user ID into database: %v", err)
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return
 	}
 
+	fmt.Println("Bu yer")
+
+	if _, err := db.Exec(`INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, msg.From.ID); err != nil {
+		log.Printf("Error inserting user ID into database: %v", err)
+		return
+	}
+
+	fmt.Println("Bu yer past")
+
 	user := getUserFromDB(msg.From.ID)
-	//if user == nil {
-	//	// Handle case where user is not found or database query failed
-	//	log.Printf("User not found for ID: %d", msg.From.ID)
-	//	return
-	//}
+
+	fmt.Println(user.ID)
 
 	var message string
 	if user.Name == "" {
 		message = "Assalomu alaykum! Botga xush kelibsiz. Ismingizni kiriting, iltimos."
 	} else {
-		message = "Assalomu alaykum! Botga xush kelibsiz."
+		message = fmt.Sprintf("Assalomu alaykum, %s! Botga xush kelibsiz.", user.Name)
+		bot.SendInitialOptions(chatID)
 	}
 
 	msgSend := tgbotapi.NewMessage(chatID, message)
 
-	// Insert user ID into database if not already present
+	botInstance := config.GetBot()
+	if botInstance == nil {
+		log.Println("Bot instance is nil")
+		return
+	}
 
 	if _, err := botInstance.Send(msgSend); err != nil {
 		log.Printf("Error sending message: %v", err)
@@ -121,6 +123,12 @@ func handleStartCommand(msg *tgbotapi.Message) {
 func handleMessage(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	userID := msg.From.ID
+
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return
+	}
 
 	user := getUserFromDB(userID)
 
@@ -135,26 +143,39 @@ func handleMessage(msg *tgbotapi.Message) {
 		message := "Assalomu alaykum, " + user.Name + "! Endi telefon raqamingizni yuboring."
 		msgSend := tgbotapi.NewMessage(chatID, message)
 
+		fmt.Println("ism qabul qilindi")
+
 		contactButton := tgbotapi.NewKeyboardButtonContact("Telefon raqamni yuborish")
 		replyMarkup := tgbotapi.NewReplyKeyboard(tgbotapi.NewKeyboardButtonRow(contactButton))
 		msgSend.ReplyMarkup = &replyMarkup
 
+		botInstance := config.GetBot()
+		if botInstance == nil {
+			log.Println("Bot instance is nil")
+			return
+		}
+
 		if _, err := botInstance.Send(msgSend); err != nil {
 			log.Printf("Error sending message: %v", err)
 		}
+		fmt.Println("tel!!!!!!!!!!!!!!")
 	} else if user.Phone == "" {
 		// Foydalanuvchidan telefon raqamini olish
 		if msg.Contact != nil {
 			user.Phone = msg.Contact.PhoneNumber
 			saveUserToDB(user)
 
-			message := fmt.Sprintf("Muvaffaqiyatli ro'yxatdan o'tdingiz. Ismingiz: %s, Telefon: %s", user.Name, user.Phone)
-			msgSend := tgbotapi.NewMessage(chatID, message)
+			// Send success message and provide further options
+			response := fmt.Sprintf("Muvaffaqiyatli ro'yxatdan o'tdingiz. Ismingiz: %s, Telefon: %s", user.Name, user.Phone)
+			msgSend := tgbotapi.NewMessage(chatID, response)
 
-			// Next step after getting phone number: additional buttons
-			queueButton := tgbotapi.NewKeyboardButton("Navbat olish")
-			replyMarkup := tgbotapi.NewReplyKeyboard(tgbotapi.NewKeyboardButtonRow(queueButton))
-			msgSend.ReplyMarkup = &replyMarkup
+			bot.SendInitialOptions(chatID) // Send initial options after phone number is received
+
+			botInstance := config.GetBot()
+			if botInstance == nil {
+				log.Println("Bot instance is nil")
+				return
+			}
 
 			if _, err := botInstance.Send(msgSend); err != nil {
 				log.Printf("Error sending message: %v", err)
@@ -165,21 +186,37 @@ func handleMessage(msg *tgbotapi.Message) {
 	} else {
 		// Handle other user messages based on the state (after name and phone)
 		switch msg.Text {
+		case "Aloqa":
+			// User chose to request assistance
+			assistanceMessage := "Assalomu alaykum, yordamim kerak bo'lsa +998931792908 raqamiga qo'ng'iroq qiling."
+			assistanceMsgSend := tgbotapi.NewMessage(chatID, assistanceMessage)
+
+			botInstance := config.GetBot()
+
+			if _, err := botInstance.Send(assistanceMsgSend); err != nil {
+				log.Printf("Error sending assistance message: %v", err)
+			}
+
 		case "Navbat olish":
 			// User chose to request queue
-			message := "Sizning so'rovingiz qabul qilindi. Tez orada sizga aloqaga chiqamiz."
-			msgSend := tgbotapi.NewMessage(chatID, message)
+			queueMessage := "Sizning so'rovingiz qabul qilindi. Tez orada sizga aloqaga chiqamiz."
+			queueMsgSend := tgbotapi.NewMessage(chatID, queueMessage)
 
-			if _, err := botInstance.Send(msgSend); err != nil {
-				log.Printf("Error sending message: %v", err)
+			botInstance := config.GetBot()
+
+			if _, err := botInstance.Send(queueMsgSend); err != nil {
+				log.Printf("Error sending queue message: %v", err)
 			}
 
 			// Implement queue handling logic here
+
 		default:
 			// Handle other messages or commands
 			// For example, show options, etc.
 			message := "Nimani qilmoqchisiz?"
 			msgSend := tgbotapi.NewMessage(chatID, message)
+
+			botInstance := config.GetBot()
 
 			if _, err := botInstance.Send(msgSend); err != nil {
 				log.Printf("Error sending message: %v", err)
@@ -195,19 +232,26 @@ func getUserFromDB(userID int64) *User {
 		phoneStr sql.NullString
 	)
 
+	fmt.Println("User: ", userID) // For debugging: print the userID being fetched
+
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return nil
+	}
+
 	row := db.QueryRow("SELECT user_id, name, phone FROM users WHERE user_id = $1", userID)
 	err := row.Scan(&user.ID, &nameStr, &phoneStr)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil
-		} else if err == sql.ErrNoRows {
-			log.Printf("User with ID %d not found in database", userID)
-			return nil
-		} else {
+		if err != sql.ErrNoRows {
 			log.Printf("Error querying user from database: %v", err)
-			return nil
+		} else {
+			log.Printf("User with ID %d not found in database", userID)
 		}
+		return nil // Return nil if user not found or other error occurred
 	}
+
+	fmt.Println("id:", user.ID) // For debugging: print the user ID after scan
 
 	if nameStr.Valid {
 		user.Name = nameStr.String
@@ -217,10 +261,19 @@ func getUserFromDB(userID int64) *User {
 		user.Phone = phoneStr.String
 	}
 
-	return &user
+	return &user // Return pointer to populated User struct
 }
 
 func saveUserToDB(user *User) {
+
+	fmt.Println("Saving user: ", user.Name)
+
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return
+	}
+
 	_, err := db.Exec("UPDATE users SET name = $2, phone = $3 WHERE user_id = $1", user.ID, user.Name, user.Phone)
 	if err != nil {
 		log.Printf("Error updating user in database: %v", err)
