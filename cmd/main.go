@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	_ "github.com/lib/pq"
@@ -11,16 +10,8 @@ import (
 	"os/signal"
 	"tgbot/bot"
 	"tgbot/config"
+	"tgbot/storage"
 )
-
-var db *sql.DB
-var botInstance *tgbotapi.BotAPI
-
-type User struct {
-	ID    int64
-	Name  string
-	Phone string
-}
 
 func main() {
 	dbHost := "localhost"
@@ -95,7 +86,7 @@ func handleStartCommand(msg *tgbotapi.Message) {
 
 	fmt.Println("Bu yer past")
 
-	user := getUserFromDB(msg.From.ID)
+	user := storage.GetUserFromDB(msg.From.ID)
 
 	fmt.Println(user.ID)
 
@@ -130,14 +121,14 @@ func handleMessage(msg *tgbotapi.Message) {
 		return
 	}
 
-	user := getUserFromDB(userID)
+	user := storage.GetUserFromDB(userID)
 
 	log.Printf("Received message: %s", msg.Text)
 
 	if user.Name == "" {
 		// Foydalanuvchi ismini so'raymiz
 		user.Name = msg.Text
-		saveUserToDB(user)
+		storage.SaveUserToDB(user)
 
 		// Ismni so'ragan xabar
 		message := "Assalomu alaykum, " + user.Name + "! Endi telefon raqamingizni yuboring."
@@ -163,7 +154,7 @@ func handleMessage(msg *tgbotapi.Message) {
 		// Foydalanuvchidan telefon raqamini olish
 		if msg.Contact != nil {
 			user.Phone = msg.Contact.PhoneNumber
-			saveUserToDB(user)
+			storage.SaveUserToDB(user)
 
 			// Send success message and provide further options
 			response := fmt.Sprintf("Muvaffaqiyatli ro'yxatdan o'tdingiz. Ismingiz: %s, Telefon: %s", user.Name, user.Phone)
@@ -222,60 +213,5 @@ func handleMessage(msg *tgbotapi.Message) {
 				log.Printf("Error sending message: %v", err)
 			}
 		}
-	}
-}
-
-func getUserFromDB(userID int64) *User {
-	var (
-		user     User
-		nameStr  sql.NullString
-		phoneStr sql.NullString
-	)
-
-	fmt.Println("User: ", userID) // For debugging: print the userID being fetched
-
-	db := config.GetDB()
-	if db == nil {
-		log.Println("Database connection is nil")
-		return nil
-	}
-
-	row := db.QueryRow("SELECT user_id, name, phone FROM users WHERE user_id = $1", userID)
-	err := row.Scan(&user.ID, &nameStr, &phoneStr)
-	if err != nil {
-		if err != sql.ErrNoRows {
-			log.Printf("Error querying user from database: %v", err)
-		} else {
-			log.Printf("User with ID %d not found in database", userID)
-		}
-		return nil // Return nil if user not found or other error occurred
-	}
-
-	fmt.Println("id:", user.ID) // For debugging: print the user ID after scan
-
-	if nameStr.Valid {
-		user.Name = nameStr.String
-	}
-
-	if phoneStr.Valid {
-		user.Phone = phoneStr.String
-	}
-
-	return &user // Return pointer to populated User struct
-}
-
-func saveUserToDB(user *User) {
-
-	fmt.Println("Saving user: ", user.Name)
-
-	db := config.GetDB()
-	if db == nil {
-		log.Println("Database connection is nil")
-		return
-	}
-
-	_, err := db.Exec("UPDATE users SET name = $2, phone = $3 WHERE user_id = $1", user.ID, user.Name, user.Phone)
-	if err != nil {
-		log.Printf("Error updating user in database: %v", err)
 	}
 }
