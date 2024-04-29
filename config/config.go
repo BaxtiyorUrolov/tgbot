@@ -3,18 +3,20 @@ package config
 import (
 	"database/sql"
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	_ "github.com/lib/pq"
 	"log"
+	"tgbot/models"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
 var bot *tgbotapi.BotAPI
 
 // InitializeDatabase sets up a connection to PostgreSQL database
-func InitializeDatabase(dbHost string, dbPort int, dbUser, dbPassword, dbName string) (*sql.DB, error) {
+func InitializeDatabase(dbConfig models.DB) (*sql.DB, error) {
 	dbInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
+		dbConfig.Host, dbConfig.Port, dbConfig.User, dbConfig.Password, dbConfig.Name)
 
 	dbConn, err := sql.Open("postgres", dbInfo)
 	if err != nil {
@@ -51,9 +53,9 @@ func GetBot() *tgbotapi.BotAPI {
 }
 
 // Setup initializes database and bot instances
-func Setup(dbHost string, dbPort int, dbUser, dbPassword, dbName, botToken string) error {
+func Setup(dbConfig models.DB, botToken string) error {
 	// Initialize database
-	dbConn, err := InitializeDatabase(dbHost, dbPort, dbUser, dbPassword, dbName)
+	dbConn, err := InitializeDatabase(dbConfig)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %v", err)
 	}

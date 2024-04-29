@@ -5,3 +5,9 @@ type User struct {
 	Name  string
 	Phone string
 }
+
+type ForClients struct {
+	ClientType   string
+	TimeDuration int
+	Price        int
+}

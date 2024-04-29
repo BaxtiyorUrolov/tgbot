@@ -4,7 +4,7 @@ import (
 	"log"
 	"tgbot/config"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
 func SendInitialOptions(chatID int64) {
@@ -17,7 +17,7 @@ func SendInitialOptions(chatID int64) {
 
 	botInstance := config.GetBot()
 
-	msgSend := tgbotapi.NewMessage(chatID, "Iltimos, tanlang:")
+	msgSend := tgbotapi.NewMessage(chatID, "")
 	msgSend.ReplyMarkup = &replyMarkup
 
 	if _, err := botInstance.Send(msgSend); err != nil {

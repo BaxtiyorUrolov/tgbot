@@ -62,3 +62,41 @@ func SaveUserToDB(user *models.User) {
 		log.Printf("Error updating user in database: %v", err)
 	}
 }
+
+func GetOrder(time string) string {
+
+	db := config.GetDB()
+
+	row := db.QueryRow("SELECT time FROM users WHERE time = $1 AND status = 'in_process' ", time)
+	err := row.Scan(&time)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			log.Printf("Error querying user from database: %v", err)
+		} else {
+			log.Printf("User with ID %d not found in database", time)
+		}
+		return "" // Return nil if user not found or other error occurred
+	}
+	return time
+}
+
+func CreateOrder(chatID, time string) string {
+	db := config.GetDB()
+
+	db.Exec("")
+	return ""
+}
+
+func GetForClient(clientType string) models.ForClients {
+	model := models.ForClients{}
+
+	db := config.GetDB()
+
+	row := db.QueryRow("SELECT type, time_duration, price FROM for_clients WHERE type = $1", clientType)
+	err := row.Scan(&model.ClientType, &model.TimeDuration, &model.Price)
+	if err != nil {
+		return model
+	}
+
+	return model
+}

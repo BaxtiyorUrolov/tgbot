@@ -3,26 +3,29 @@ package main
 import (
 	"context"
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"os/signal"
 	"tgbot/bot"
 	"tgbot/config"
+	"tgbot/models"
 	"tgbot/storage"
 )
 
 func main() {
-	dbHost := "localhost"
-	dbPort := 5432
-	dbUser := "godb"
-	dbPassword := "0208"
-	dbName := "tgbot"
+
+	dbConfig := models.DB{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "godb",
+		Password: "0208",
+		Name:     "tgbot",
+	}
 	botToken := "6588290150:AAEb0jDtup7apLatgxvWbCHmh2MgWX81_Xg"
 
-	// Setup database and bot
-	if err := config.Setup(dbHost, dbPort, dbUser, dbPassword, dbName, botToken); err != nil {
+	if err := config.Setup(dbConfig, botToken); err != nil {
 		log.Fatalf("Error setting up configuration: %v", err)
 	}
 
@@ -44,7 +47,11 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates := botInstance.GetUpdatesChan(u)
+	updates, err := botInstance.GetUpdatesChan(u)
+	if err != nil {
+		log.Fatalf("Error getting updates: %v", err)
+		return
+	}
 
 	fmt.Println("Bot is now running. Press CTRL-C to exit.")
 
@@ -77,25 +84,19 @@ func handleStartCommand(msg *tgbotapi.Message) {
 		return
 	}
 
-	fmt.Println("Bu yer")
-
 	if _, err := db.Exec(`INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, msg.From.ID); err != nil {
 		log.Printf("Error inserting user ID into database: %v", err)
 		return
 	}
 
-	fmt.Println("Bu yer past")
-
-	user := storage.GetUserFromDB(msg.From.ID)
-
-	fmt.Println(user.ID)
+	user := storage.GetUserFromDB(int64(msg.From.ID))
 
 	var message string
 	if user.Name == "" {
 		message = "Assalomu alaykum! Botga xush kelibsiz. Ismingizni kiriting, iltimos."
 	} else {
 		message = fmt.Sprintf("Assalomu alaykum, %s! Botga xush kelibsiz.", user.Name)
-		bot.SendInitialOptions(chatID)
+
 	}
 
 	msgSend := tgbotapi.NewMessage(chatID, message)
@@ -109,11 +110,14 @@ func handleStartCommand(msg *tgbotapi.Message) {
 	if _, err := botInstance.Send(msgSend); err != nil {
 		log.Printf("Error sending message: %v", err)
 	}
+
+	if user.Name != "" {
+		bot.SelectBarber(chatID)
+	}
 }
 
 func handleMessage(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
-	userID := msg.From.ID
 
 	db := config.GetDB()
 	if db == nil {
@@ -121,97 +125,30 @@ func handleMessage(msg *tgbotapi.Message) {
 		return
 	}
 
-	user := storage.GetUserFromDB(userID)
+	//user := storage.GetUserFromDB(userID)
 
 	log.Printf("Received message: %s", msg.Text)
 
-	if user.Name == "" {
-		// Foydalanuvchi ismini so'raymiz
-		user.Name = msg.Text
-		storage.SaveUserToDB(user)
+	bot.Register(msg)
 
-		// Ismni so'ragan xabar
-		message := "Assalomu alaykum, " + user.Name + "! Endi telefon raqamingizni yuboring."
-		msgSend := tgbotapi.NewMessage(chatID, message)
-
-		fmt.Println("ism qabul qilindi")
-
-		contactButton := tgbotapi.NewKeyboardButtonContact("Telefon raqamni yuborish")
-		replyMarkup := tgbotapi.NewReplyKeyboard(tgbotapi.NewKeyboardButtonRow(contactButton))
-		msgSend.ReplyMarkup = &replyMarkup
+	// Handle other user messages based on the state (after name and phone)
+	switch msg.Text {
+	case "Aloqa":
+		// User chose to request assistance
+		assistanceMessage := "Assalomu alaykum, yordamim kerak bo'lsa +998931792908 raqamiga qo'ng'iroq qiling."
+		assistanceMsgSend := tgbotapi.NewMessage(chatID, assistanceMessage)
 
 		botInstance := config.GetBot()
-		if botInstance == nil {
-			log.Println("Bot instance is nil")
-			return
+
+		if _, err := botInstance.Send(assistanceMsgSend); err != nil {
+			log.Printf("Error sending assistance message: %v", err)
 		}
 
-		if _, err := botInstance.Send(msgSend); err != nil {
-			log.Printf("Error sending message: %v", err)
-		}
-		fmt.Println("tel!!!!!!!!!!!!!!")
-	} else if user.Phone == "" {
-		// Foydalanuvchidan telefon raqamini olish
-		if msg.Contact != nil {
-			user.Phone = msg.Contact.PhoneNumber
-			storage.SaveUserToDB(user)
+	case "Navbat olish":
 
-			// Send success message and provide further options
-			response := fmt.Sprintf("Muvaffaqiyatli ro'yxatdan o'tdingiz. Ismingiz: %s, Telefon: %s", user.Name, user.Phone)
-			msgSend := tgbotapi.NewMessage(chatID, response)
+		bot.SelectBarber(chatID)
 
-			bot.SendInitialOptions(chatID) // Send initial options after phone number is received
+		// Implement queue handling logic here
 
-			botInstance := config.GetBot()
-			if botInstance == nil {
-				log.Println("Bot instance is nil")
-				return
-			}
-
-			if _, err := botInstance.Send(msgSend); err != nil {
-				log.Printf("Error sending message: %v", err)
-			}
-		} else {
-			log.Printf("Foydalanuvchidan telefon raqamni kiritish so'raldi, lekin kontakt yuborilmadi")
-		}
-	} else {
-		// Handle other user messages based on the state (after name and phone)
-		switch msg.Text {
-		case "Aloqa":
-			// User chose to request assistance
-			assistanceMessage := "Assalomu alaykum, yordamim kerak bo'lsa +998931792908 raqamiga qo'ng'iroq qiling."
-			assistanceMsgSend := tgbotapi.NewMessage(chatID, assistanceMessage)
-
-			botInstance := config.GetBot()
-
-			if _, err := botInstance.Send(assistanceMsgSend); err != nil {
-				log.Printf("Error sending assistance message: %v", err)
-			}
-
-		case "Navbat olish":
-			// User chose to request queue
-			queueMessage := "Sizning so'rovingiz qabul qilindi. Tez orada sizga aloqaga chiqamiz."
-			queueMsgSend := tgbotapi.NewMessage(chatID, queueMessage)
-
-			botInstance := config.GetBot()
-
-			if _, err := botInstance.Send(queueMsgSend); err != nil {
-				log.Printf("Error sending queue message: %v", err)
-			}
-
-			// Implement queue handling logic here
-
-		default:
-			// Handle other messages or commands
-			// For example, show options, etc.
-			message := "Nimani qilmoqchisiz?"
-			msgSend := tgbotapi.NewMessage(chatID, message)
-
-			botInstance := config.GetBot()
-
-			if _, err := botInstance.Send(msgSend); err != nil {
-				log.Printf("Error sending message: %v", err)
-			}
-		}
 	}
 }
