@@ -117,7 +117,6 @@ func handleStartCommand(msg *tgbotapi.Message) {
 }
 
 func handleMessage(msg *tgbotapi.Message) {
-	chatID := msg.Chat.ID
 
 	db := config.GetDB()
 	if db == nil {
@@ -131,24 +130,4 @@ func handleMessage(msg *tgbotapi.Message) {
 
 	bot.Register(msg)
 
-	// Handle other user messages based on the state (after name and phone)
-	switch msg.Text {
-	case "Aloqa":
-		// User chose to request assistance
-		assistanceMessage := "Assalomu alaykum, yordamim kerak bo'lsa +998931792908 raqamiga qo'ng'iroq qiling."
-		assistanceMsgSend := tgbotapi.NewMessage(chatID, assistanceMessage)
-
-		botInstance := config.GetBot()
-
-		if _, err := botInstance.Send(assistanceMsgSend); err != nil {
-			log.Printf("Error sending assistance message: %v", err)
-		}
-
-	case "Navbat olish":
-
-		bot.SelectBarber(chatID)
-
-		// Implement queue handling logic here
-
-	}
 }
