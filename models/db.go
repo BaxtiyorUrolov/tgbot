@@ -9,3 +9,9 @@ type DB struct {
 }
 
 var BotToken string
+
+type GetOrders struct {
+	BarberID string
+	Date     string
+	Time     string
+}

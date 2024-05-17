@@ -63,40 +63,30 @@ func SaveUserToDB(user *models.User) {
 	}
 }
 
-func GetOrder(time string) string {
-
+func GetOrders(order models.GetOrders) (string, error) {
 	db := config.GetDB()
 
-	row := db.QueryRow("SELECT time FROM users WHERE time = $1 AND status = 'in_process' ", time)
-	err := row.Scan(&time)
+	rows, err := db.Query("SELECT order_time FROM orders WHERE order_date = $1 AND barber_id = $2 AND status = 'in_process'", order.Date, order.BarberID)
 	if err != nil {
-		if err != sql.ErrNoRows {
-			log.Printf("Error querying user from database: %v", err)
-		} else {
-			log.Printf("User with ID %d not found in database", time)
+		log.Printf("Database query error: %v", err)
+		return "", err
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		err := rows.Scan(&order.Time)
+		if err != nil {
+			log.Printf("Error scanning rows: %v", err)
+			return "", err
 		}
-		return "" // Return nil if user not found or other error occurred
-	}
-	return time
-}
-
-func CreateOrder(chatID, time string) string {
-	db := config.GetDB()
-
-	db.Exec("")
-	return ""
-}
-
-func GetForClient(clientType string) models.ForClients {
-	model := models.ForClients{}
-
-	db := config.GetDB()
-
-	row := db.QueryRow("SELECT type, time_duration, price FROM for_clients WHERE type = $1", clientType)
-	err := row.Scan(&model.ClientType, &model.TimeDuration, &model.Price)
-	if err != nil {
-		return model
+	} else {
+		return "", nil
 	}
 
-	return model
+	if err := rows.Err(); err != nil {
+		log.Printf("Rows error: %v", err)
+		return "", err
+	}
+
+	return order.Time, nil
 }

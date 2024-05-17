@@ -1,132 +1,97 @@
+// bot/order.go
+
 package bot
 
 import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"tgbot/config"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-// SelectBarber sends a photo with an inline keyboard to the specified chat.
-func SelectBarber(chatID int64) {
-	// Path to your photo
+// SelectBarber sartaroshni rasm bilan jo'natadi
+func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
+	// Rasmning yo'lini belgilash
 	photoFilePath := "./photo.jpg"
 	caption := "Iltimos, sartaroshni tanlang:"
 
-	// Bot instance
-	botInstance := config.GetBot()
-	if botInstance == nil {
-		log.Println("Bot instance is nil")
-		return
-	}
-
-	// Open and read the photo file
+	// Rasm faylini ochish va o'qish
 	photoFileBytes, err := ioutil.ReadFile(photoFilePath)
 	if err != nil {
-		log.Printf("Failed to read photo file: %v", err)
+		log.Printf("Rasm faylini o'qishda xatolik: %v", err)
 		return
 	}
 
-	// Create a new photo configuration for sending a photo
+	// Jo'natiladigan rasm uchun yangi rasm konfiguratsiyasi yaratish
 	msg := tgbotapi.NewPhotoUpload(chatID, tgbotapi.FileBytes{
 		Name:  "photo.jpg",
 		Bytes: photoFileBytes,
 	})
 
-	// Set the photo caption
+	// Rasm sarlavhasini sozlash
 	msg.Caption = caption
 
-	// Create an inline keyboard with barber selection buttons in two rows
+	// Ikki qatorlik sartaroshni tanlash tugmalarini o'z ichiga olgan to'plam yaratish
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		// First row of buttons (barber selection)
+		// Birinchi qator (sartarosh tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Baxtiyor", "select_barber Baxtiyor"),
-			tgbotapi.NewInlineKeyboardButtonData("Ali", "select_barber Ali"),
+			tgbotapi.NewInlineKeyboardButtonData("Baxtiyor", "select_date_Baxtiyor"),
+			tgbotapi.NewInlineKeyboardButtonData("Ali", "select_date_Ali"),
 		),
-		// Second row of buttons (barber selection)
+		// Ikkinchi qator (sartarosh tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Aziz", "select_barber Aziz"),
-			tgbotapi.NewInlineKeyboardButtonData("Obid", "select_barber Obid"),
+			tgbotapi.NewInlineKeyboardButtonData("Aziz", "select_date_Aziz"),
+			tgbotapi.NewInlineKeyboardButtonData("Obid", "select_date_Obid"),
 		),
 	)
 
-	// Attach the inline keyboard to the message
+	// Sartarosh tanlash tugmalari bilan sartarosh tanlash to'plamini bog'lash
 	msg.ReplyMarkup = &keyboard
 
-	// Send the photo message
+	// Rasm xabarni jo'natish
 	if _, err := botInstance.Send(msg); err != nil {
-		log.Printf("Failed to send photo: %v", err)
+		log.Printf("Rasmni jo'natishda xatolik: %v", err)
 	}
 
-	// Get user selection after sending barber options
-	getSelectedBarber(chatID)
+	// Logda sartarosh tanlanganda chiqariladigan xabar
+	log.Println("Sartaroshni tanlash tugmalarini jo'natish uchun botdan so'roq jo'natildi")
 }
 
-// getSelectedBarber gets the selected barber from the user.
-func getSelectedBarber(chatID int64) {
-	// Bot instance
-	botInstance := config.GetBot()
-	if botInstance == nil {
-		log.Println("Bot instance is nil")
-		return
-	}
-
-	// Listen for user selection
-	updates, err := botInstance.GetUpdatesChan(tgbotapi.NewUpdate(0))
-	if err != nil {
-		log.Printf("Failed to get updates channel: %v", err)
-		return
-	}
-
-	// Wait for user selection
-	for update := range updates {
-		if update.CallbackQuery != nil {
-			// Get selected barber name
-			selectedBarberName := update.CallbackQuery.Data
-			log.Printf("Selected barber: %s", selectedBarberName)
-
-			// Call SelectDate function with selected barber name
-			SelectDate(chatID, selectedBarberName)
-			break
-		}
-	}
-}
-
-// SelectDate prompts the user to select a date after selecting a barber.
-func SelectDate(chatID int64, barberName string) {
-	// If barberName is empty, do not prompt for date selection
+// SelectDate foydalanuvchiga sartarosh tanlagandan so'ng sanani tanlashni so'rash
+func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string) {
+	// Agar sartarosh nomi bo'sh bo'lsa, sanani tanlashni so'ramaslik
 	if barberName == "" {
-		log.Println("Barber is not selected. Skipping date selection.")
+		log.Println("Sartarosh tanlanmagan. Sanani tanlash o'tkaziladi.")
 		return
 	}
 
-	// Get today's date
+	// Bugungi sanani olish
 	today := time.Now()
-	// Get tomorrow's date
+	// Ertangi sanani olish
 	tomorrow := today.AddDate(0, 0, 1)
-	// Get the day after tomorrow's date
+	// Ertagina kechasan sanani olish
 	dayAfterTomorrow := today.AddDate(0, 0, 2)
 
-	// Create an inline keyboard with date selection buttons
+	// Sanani tanlash tugmalari bilan ichki sartaroshni yaratish
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		// First row of buttons (date selection)
+		// Birinchi qator (sanani tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(today.Format("02.01.2006"), fmt.Sprintf("select_date %s %s", today.Format("2006-01-02"), barberName)),
-			tgbotapi.NewInlineKeyboardButtonData(tomorrow.Format("02.01.2006"), fmt.Sprintf("select_date %s %s", tomorrow.Format("2006-01-02"), barberName)),
+			tgbotapi.NewInlineKeyboardButtonData(today.Format("02.01.2006"), fmt.Sprintf("select_date_%s_%s", barberName, today.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData(tomorrow.Format("02.01.2006"), fmt.Sprintf("select_date_%s_%s", barberName, tomorrow.Format("2006-01-02"))),
 		),
-		// Second row of buttons (date selection)
+		// Ikkinchi qator (sanani tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(dayAfterTomorrow.Format("02.01.2006"), fmt.Sprintf("select_date %s %s", dayAfterTomorrow.Format("2006-01-02"), barberName)),
+			tgbotapi.NewInlineKeyboardButtonData(dayAfterTomorrow.Format("02.01.2006"), fmt.Sprintf("select_date_%s_%s", barberName, dayAfterTomorrow.Format("2006-01-02"))),
 		),
 	)
 
-	// Send the inline keyboard for date selection
-	dateSelectionMsg := tgbotapi.NewMessage(chatID, "Sana tanlang:")
+	// Sanani tanlash tugmalari bilan sanani jo'natish
+	dateSelectionMsg := tgbotapi.NewMessage(chatID, "Sana tanlang (kun.oy.yil):")
 	dateSelectionMsg.ReplyMarkup = &keyboard
-	if _, err := config.GetBot().Send(dateSelectionMsg); err != nil {
-		log.Printf("Failed to send date selection keyboard: %v", err)
+	if _, err := botInstance.Send(dateSelectionMsg); err != nil {
+		log.Printf("Sanani tanlash klaviaturasini jo'natishda xatolik: %v", err)
+		return
 	}
 }

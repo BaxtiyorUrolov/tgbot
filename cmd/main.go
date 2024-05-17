@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
-	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"os/signal"
@@ -12,10 +10,13 @@ import (
 	"tgbot/config"
 	"tgbot/models"
 	"tgbot/storage"
+	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
 func main() {
-
+	// Ma'lumotlar omboriga ulanish uchun konfiguratsiyani sozlash
 	dbConfig := models.DB{
 		Host:     "localhost",
 		Port:     5432,
@@ -23,56 +24,87 @@ func main() {
 		Password: "0208",
 		Name:     "tgbot",
 	}
+	// Bot tokenini olish
 	botToken := "6588290150:AAEb0jDtup7apLatgxvWbCHmh2MgWX81_Xg"
 
+	// Konfiguratsiyani sozlash va boshlash
 	if err := config.Setup(dbConfig, botToken); err != nil {
-		log.Fatalf("Error setting up configuration: %v", err)
+		log.Fatalf("Konfiguratsiyani sozlashda xatolik: %v", err)
 	}
 
+	// Ma'lumotlar omborini yopish
 	defer func() {
 		if err := config.GetDB().Close(); err != nil {
-			log.Printf("Error closing database connection: %v", err)
+			log.Printf("Ma'lumotlar omborini yopishda xatolik: %v", err)
 		}
 	}()
 
+	// Bot instansiyasini olish
 	botInstance := config.GetBot()
 	if botInstance == nil {
-		log.Fatal("Failed to get bot instance from config")
+		log.Fatal("Bot instansiyasini olishda xatolik")
 	}
 
-	// Interrupt and syscall signal handling context
+	// Interrupt va syscall signal qabul qilish uchun kontekstni sozlash
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-
-	updates, err := botInstance.GetUpdatesChan(u)
-	if err != nil {
-		log.Fatalf("Error getting updates: %v", err)
-		return
-	}
-
-	fmt.Println("Bot is now running. Press CTRL-C to exit.")
-
+	// Bot yangiliklarini qabul qilish uchun botning GetUpdates funksiyasidan foydalanish
+	offset := 0
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Shutting down bot...")
+			log.Println("Botni yopish...")
 			return
-		case update := <-updates:
-			if update.Message == nil {
+		default:
+			updates, err := botInstance.GetUpdates(tgbotapi.NewUpdate(offset))
+			if err != nil {
+				log.Printf("Yangiliklarni olishda xatolik: %v", err)
+				time.Sleep(5 * time.Second) // Agar xatolik bo'lsa, birlamchi vaqt tanlang
 				continue
 			}
-
-			switch update.Message.Command() {
-			case "start":
-				handleStartCommand(update.Message)
-			default:
-				handleMessage(update.Message)
+			// Yangiliklarni boshqarish
+			for _, update := range updates {
+				HandleUpdate(update)
+				offset = update.UpdateID + 1
 			}
 		}
 	}
+}
+
+func HandleUpdate(update tgbotapi.Update) {
+	// Handle the update based on its type
+	if update.Message != nil {
+		fmt.Println("bu yer start")
+		// Logic for handling regular messages
+		handleStartCommand(update.Message)
+	} else if update.InlineQuery != nil {
+		// Logic for handling inline queries
+		fmt.Println("bu yer inline")
+		handleInlineQuery(update.InlineQuery)
+	} else if update.CallbackQuery != nil {
+		fmt.Println("bu yer callback")
+		// Logic for handling callback queries
+		handleCallbackQuery(update.CallbackQuery)
+	} else {
+		log.Printf("Received unsupported update type: %T", update)
+	}
+}
+
+func handleInlineQuery(inline *tgbotapi.InlineQuery) {
+	// Logic for handling callback queries
+	log.Printf("Received callback query: %s", inline.Query)
+	// Example: Extract data from callback query and perform relevant actions
+}
+
+func handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
+	// Extracting data from callback query
+	barberName := callback.Data
+
+	// Printing barber name to the console
+	fmt.Println("Selected barber:", barberName)
+
+	// You can add further logic here based on the selected barber
 }
 
 func handleStartCommand(msg *tgbotapi.Message) {
@@ -112,8 +144,35 @@ func handleStartCommand(msg *tgbotapi.Message) {
 	}
 
 	if user.Name != "" {
-		bot.SelectBarber(chatID)
+		bot.SelectBarber(chatID, botInstance)
 	}
+}
+
+func handleSelectBarber(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+	botInstance := config.GetBot()
+
+	fmt.Println(msg.Text)
+
+	if botInstance == nil {
+		log.Println("Bot instance is nil")
+		return
+	}
+
+	bot.SelectBarber(chatID, botInstance)
+}
+
+func handleSelectDate(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+	barberName := msg.Text
+	botInstance := config.GetBot()
+
+	if botInstance == nil {
+		log.Println("Bot instance is nil")
+		return
+	}
+
+	bot.SelectDate(chatID, botInstance, barberName)
 }
 
 func handleMessage(msg *tgbotapi.Message) {
@@ -124,10 +183,6 @@ func handleMessage(msg *tgbotapi.Message) {
 		return
 	}
 
-	//user := storage.GetUserFromDB(userID)
-
 	log.Printf("Received message: %s", msg.Text)
-
 	bot.Register(msg)
-
 }

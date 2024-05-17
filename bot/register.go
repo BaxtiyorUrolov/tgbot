@@ -1,3 +1,5 @@
+//bot/register.go
+
 package bot
 
 import (
@@ -64,7 +66,7 @@ func Register(msg *tgbotapi.Message) {
 				log.Printf("Error sending message: %v", err)
 			}
 
-			SelectBarber(chatID)
+			SelectBarber(chatID, botInstance)
 		}
 	}
 }
