@@ -15,7 +15,7 @@ func GetUserFromDB(userID int64) *models.User {
 		phoneStr sql.NullString
 	)
 
-	fmt.Println("User: ", userID) // For debugging: print the userID being fetched
+	fmt.Println("Usehr: ", userID) // Debug: userIDni chiqarish
 
 	db := config.GetDB()
 	if db == nil {
@@ -31,20 +31,23 @@ func GetUserFromDB(userID int64) *models.User {
 		} else {
 			log.Printf("User with ID %d not found in database", userID)
 		}
-		return nil // Return nil if user not found or other error occurred
+		fmt.Println("NIL")
+		return nil // User topilmasa yoki boshqa xatolik yuz bersa, nil qaytarish
 	}
 
-	fmt.Println("id:", user.ID) // For debugging: print the user ID after scan
+	fmt.Println("id:", user.Name) // Debug: user IDni chiqarish
 
 	if nameStr.Valid {
 		user.Name = nameStr.String
 	}
 
+	fmt.Println("Name: ", user.Name) // Debug: user nomini chiqarish
+
 	if phoneStr.Valid {
 		user.Phone = phoneStr.String
 	}
 
-	return &user // Return pointer to populated User struct
+	return &user // Populated User struct pointerini qaytarish
 }
 
 func SaveUserToDB(user *models.User) {

@@ -67,6 +67,8 @@ func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string) {
 		return
 	}
 
+	fmt.Println("Sanaga kirdi")
+
 	// Bugungi sanani olish
 	today := time.Now()
 	// Ertangi sanani olish
