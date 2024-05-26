@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -60,7 +61,7 @@ func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
 }
 
 // SelectDate foydalanuvchiga sartarosh tanlagandan so'ng sanani tanlashni so'rash
-func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string) {
+func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, update tgbotapi.Update) {
 	// Agar sartarosh nomi bo'sh bo'lsa, sanani tanlashni so'ramaslik
 	if barberName == "" {
 		log.Println("Sartarosh tanlanmagan. Sanani tanlash o'tkaziladi.")
@@ -80,12 +81,12 @@ func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string) {
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		// Birinchi qator (sanani tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(today.Format("02.01.2006"), fmt.Sprintf("select_date_%s_%s", barberName, today.Format("2006-01-02"))),
-			tgbotapi.NewInlineKeyboardButtonData(tomorrow.Format("02.01.2006"), fmt.Sprintf("select_date_%s_%s", barberName, tomorrow.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData(today.Format("02.01.2006"), fmt.Sprintf("datte_%s", today.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData(tomorrow.Format("02.01.2006"), fmt.Sprintf("datte_%s", tomorrow.Format("2006-01-02"))),
 		),
 		// Ikkinchi qator (sanani tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(dayAfterTomorrow.Format("02.01.2006"), fmt.Sprintf("select_date_%s_%s", barberName, dayAfterTomorrow.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData(dayAfterTomorrow.Format("02.01.2006"), fmt.Sprintf("datte_%s", dayAfterTomorrow.Format("2006-01-02"))),
 		),
 	)
 
@@ -95,5 +96,17 @@ func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string) {
 	if _, err := botInstance.Send(dateSelectionMsg); err != nil {
 		log.Printf("Sanani tanlash klaviaturasini jo'natishda xatolik: %v", err)
 		return
+	}
+}
+
+func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, update tgbotapi.Update) {
+	callbackData := update.CallbackQuery.Data
+
+	fmt.Println("Orderga kirdi")
+
+	fmt.Println("Sartarosh: ", barberName)
+
+	if strings.Contains(strings.ToLower(callbackData), "datte_") {
+		fmt.Println("SANA:    ", callbackData)
 	}
 }
