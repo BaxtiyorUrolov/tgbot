@@ -6,6 +6,8 @@ import (
 	"log"
 	"tgbot/config"
 	"tgbot/models"
+
+	"github.com/google/uuid"
 )
 
 func GetUserFromDB(userID int64) *models.User {
@@ -15,7 +17,7 @@ func GetUserFromDB(userID int64) *models.User {
 		phoneStr sql.NullString
 	)
 
-	fmt.Println("Usehr: ", userID) // Debug: userIDni chiqarish
+	fmt.Println("User: ", userID) // Debug: userIDni chiqarish
 
 	db := config.GetDB()
 	if db == nil {
@@ -94,4 +96,18 @@ func GetOrders(order models.GetOrders) ([]string, error) {
 	return orders, nil
 }
 
+func SaveOrder(order models.Order) error {
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return fmt.Errorf("database connection is nil")
+	}
 
+	_, err := db.Exec("INSERT INTO orders (id, barber_name, user_id, order_time, order_date, status) VALUES ($1, $2, $3, $4, $5, $6)",
+	uuid.New().String(), order.BarberName, order.UserID, order.OrderTime, order.OrderDate, order.Status)
+	if err != nil {
+		log.Printf("Error inserting order into database: %v", err)
+		return err
+	}
+	return nil
+}

@@ -92,7 +92,19 @@ func HandleUpdate(update tgbotapi.Update) {
 	} else if update.CallbackQuery != nil {
 		fmt.Println("bu yer callback")
 		// Logic for handling callback queries
-		handleCallbackQuery(update)
+		callback := update.CallbackQuery
+		if strings.HasPrefix(callback.Data, "confirm_") || strings.HasPrefix(callback.Data, "book_") || callback.Data == "back" {
+			// Handle confirmation or booking
+			data := strings.Split(callback.Data, "_")
+			if len(data) >= 4 {
+				barberName := data[1]
+				orderDate := data[2]
+				orderTime := data[3]
+				bot.HandleConfirmation(callback.Message.Chat.ID, config.GetBot(), barberName, orderDate, orderTime, update)
+			}
+		} else {
+			handleCallbackQuery(update)
+		}
 	} else {
 		log.Printf("Received unsupported update type: %T", update)
 	}
@@ -157,15 +169,13 @@ func handleStartCommand(msg *tgbotapi.Message) {
 	user := storage.GetUserFromDB(int64(msg.From.ID))
 
 	var message string
-	if user.Name == "" {
+	if user == nil || user.Name == "" {
 		message = "Assalomu alaykum! Botga xush kelibsiz. Ismingizni kiriting, iltimos."
 		if msg.Text != "/start" {
 			handleMessage(msg)
 		}
-		
 	} else {
 		message = fmt.Sprintf("Assalomu alaykum, %s! Botga xush kelibsiz.", user.Name)
-
 	}
 
 	msgSend := tgbotapi.NewMessage(chatID, message)
@@ -180,7 +190,7 @@ func handleStartCommand(msg *tgbotapi.Message) {
 		log.Printf("Error sending message: %v", err)
 	}
 
-	if user.Name != "" {
+	if user != nil && user.Name != "" {
 		bot.SelectBarber(chatID, botInstance)
 	}
 }

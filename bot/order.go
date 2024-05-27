@@ -1,5 +1,3 @@
-// bot/order.go
-
 package bot
 
 import (
@@ -143,7 +141,7 @@ func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, 
 				if _, exists := existingTimesSet[timeSlot]; exists {
 					row = append(row, tgbotapi.NewInlineKeyboardButtonData("❌", "X"))
 				} else {
-					callbackData := fmt.Sprintf("book_%s_%s", barberName, timeSlot)
+					callbackData := fmt.Sprintf("confirm_%s_%s_%s", barberName, orderDate, timeSlot)
 					row = append(row, tgbotapi.NewInlineKeyboardButtonData(timeSlot, callbackData))
 				}
 			}
@@ -162,5 +160,67 @@ func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, 
 	}
 }
 
+func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, orderDate string, orderTime string, update tgbotapi.Update) {
+	callbackData := update.CallbackQuery.Data
 
+	if strings.HasPrefix(callbackData, "confirm_") {
+		// Extract barber name, order date, and order time from the callback data
+		data := strings.Split(callbackData, "_")
+		if len(data) < 4 {
+			log.Println("Invalid callback data for confirmation")
+			return
+		}
+		barberName := data[1]
+		orderDate := data[2]
+		orderTime := data[3]
 
+		// Create inline buttons for confirmation
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("Tasdiqlash", fmt.Sprintf("book_%s_%s_%s", barberName, orderDate, orderTime)),
+				tgbotapi.NewInlineKeyboardButtonData("Ortga qaytish", "back"),
+			),
+		)
+
+		// Send a message asking for confirmation
+		confirmationMsg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Siz %s kuni %s vaqtiga navbat olishni xohlaysizmi?", orderDate, orderTime))
+		confirmationMsg.ReplyMarkup = &keyboard
+		if _, err := botInstance.Send(confirmationMsg); err != nil {
+			log.Printf("Confirmation message sending error: %v", err)
+			return
+		}
+	} else if strings.HasPrefix(callbackData, "book_") {
+		// Extract barber name, order date, and order time from the callback data
+		data := strings.Split(callbackData, "_")
+		if len(data) < 4 {
+			log.Println("Invalid callback data for booking")
+			return
+		}
+		barberName := data[1]
+		orderDate := data[2]
+		orderTime := data[3]
+
+		// Insert the booking details into the orders table
+		order := models.Order{
+			BarberName: barberName,
+			UserID:     update.CallbackQuery.From.ID,
+			OrderDate:  orderDate,
+			OrderTime:  orderTime,
+			Status:     "in_process",
+		}
+
+		if err := storage.SaveOrder(order); err != nil {
+			log.Printf("Error saving order: %v", err)
+			return
+		}
+
+		// Send a confirmation message
+		confirmationMsg := tgbotapi.NewMessage(chatID, "Navbat muvaffaqiyatli saqlandi!")
+		if _, err := botInstance.Send(confirmationMsg); err != nil {
+			log.Printf("Error sending confirmation message: %v", err)
+		}
+	} else if callbackData == "back" {
+		// Handle the "Back" button press by redisplaying the time slots
+		SelectOrder(chatID, botInstance, barberName, update)
+	}
+}
