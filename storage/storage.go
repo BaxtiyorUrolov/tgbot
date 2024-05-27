@@ -66,30 +66,32 @@ func SaveUserToDB(user *models.User) {
 	}
 }
 
-func GetOrders(order models.GetOrders) (string, error) {
+func GetOrders(order models.GetOrders) ([]string, error) {
 	db := config.GetDB()
+	var orders []string
 
-	rows, err := db.Query("SELECT order_time FROM orders WHERE order_date = $1 AND barber_id = $2 AND status = 'in_process'", order.Date, order.BarberID)
+	rows, err := db.Query("SELECT order_time FROM orders WHERE order_date = $1 AND barber_name = $2 AND status = 'in_process'", order.Date, order.BarberID)
 	if err != nil {
 		log.Printf("Database query error: %v", err)
-		return "", err
+		return nil, err
 	}
 	defer rows.Close()
 
-	if rows.Next() {
-		err := rows.Scan(&order.Time)
-		if err != nil {
+	for rows.Next() {
+		var orderTime string
+		if err := rows.Scan(&orderTime); err != nil {
 			log.Printf("Error scanning rows: %v", err)
-			return "", err
+			return nil, err
 		}
-	} else {
-		return "", nil
+		orders = append(orders, orderTime)
 	}
 
 	if err := rows.Err(); err != nil {
 		log.Printf("Rows error: %v", err)
-		return "", err
+		return nil, err
 	}
 
-	return order.Time, nil
+	return orders, nil
 }
+
+

@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"log"
 	"strings"
+	"tgbot/models"
+	"tgbot/storage"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -103,10 +105,62 @@ func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, 
 	callbackData := update.CallbackQuery.Data
 
 	fmt.Println("Orderga kirdi")
-
 	fmt.Println("Sartarosh: ", barberName)
 
 	if strings.Contains(strings.ToLower(callbackData), "datte_") {
 		fmt.Println("SANA:    ", callbackData)
+
+		// Extract the date from the callback data
+		orderDate := strings.TrimPrefix(callbackData, "datte_")
+		
+		// Fetch existing orders for the selected barber and date
+		order := models.GetOrders{
+			BarberID: barberName,
+			Date:     orderDate,
+		}
+
+		existingOrderTimes, err := storage.GetOrders(order)
+		if err != nil {
+			log.Printf("Error fetching orders: %v", err)
+			return
+		}
+
+		// Create a set of existing order times
+		existingTimesSet := make(map[string]struct{})
+		for _, time := range existingOrderTimes {
+			existingTimesSet[time] = struct{}{}
+		}
+
+		// Define the available time slots
+		timeSlots := []string{"9:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"}
+
+		// Create inline keyboard buttons for the time slots
+		var rows [][]tgbotapi.InlineKeyboardButton
+		for i := 0; i < len(timeSlots); i += 4 {
+			var row []tgbotapi.InlineKeyboardButton
+			for j := 0; j < 4 && i+j < len(timeSlots); j++ {
+				timeSlot := timeSlots[i+j]
+				if _, exists := existingTimesSet[timeSlot]; exists {
+					row = append(row, tgbotapi.NewInlineKeyboardButtonData("❌", "X"))
+				} else {
+					callbackData := fmt.Sprintf("book_%s_%s", barberName, timeSlot)
+					row = append(row, tgbotapi.NewInlineKeyboardButtonData(timeSlot, callbackData))
+				}
+			}
+			rows = append(rows, row)
+		}
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
+
+		// Send a message to the user to select a time slot
+		timeSelectionMsg := tgbotapi.NewMessage(chatID, "Navbat tanlang:")
+		timeSelectionMsg.ReplyMarkup = &keyboard
+		if _, err := botInstance.Send(timeSelectionMsg); err != nil {
+			log.Printf("Navbat tanlash klaviaturasini jo'natishda xatolik: %v", err)
+			return
+		}
 	}
 }
+
+
+
