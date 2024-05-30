@@ -8,11 +8,12 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"time"
+
 	"tgbot/bot"
 	"tgbot/config"
 	"tgbot/models"
 	"tgbot/storage"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
@@ -84,7 +85,7 @@ func HandleUpdate(update tgbotapi.Update) {
 	if update.Message != nil {
 		fmt.Println("bu yer start")
 		// Logic for handling regular messages
-		handleStartCommand(update.Message)
+		handleMessage(update.Message)
 	} else if update.InlineQuery != nil {
 		// Logic for handling inline queries
 		fmt.Println("bu yer inline")
@@ -100,7 +101,7 @@ func HandleUpdate(update tgbotapi.Update) {
 				barberName := data[1]
 				orderDate := data[2]
 				orderTime := data[3]
-				bot.HandleConfirmation(callback.Message.Chat.ID, config.GetBot(), barberName, orderDate, orderTime, update)
+				bot.HandleConfirmation(callback.Message.Chat.ID, config.GetBot(), barberName, orderDate, orderTime, update, callback.Message.MessageID)
 			}
 		} else {
 			handleCallbackQuery(update)
@@ -141,74 +142,86 @@ func handleCallbackQuery(update tgbotapi.Update) {
 	} else if strings.HasPrefix(data, "datte_") {
 		// Check if the callback data contains "datte_" to identify date selection
 
-		// Retrieve the barber name from the user state map
+		// Retrieve the barber name from the callback data
+		dataParts := strings.Split(strings.TrimPrefix(data, "datte_"), "_")
+		if len(dataParts) < 2 {
+			log.Println("Invalid callback data for order selection")
+			return
+		}
+		barberName := dataParts[0]
+		orderDate := dataParts[1]
+
 		userStates.RLock()
-		lastMessageID := userStates.m[chatID]
+		//lastMessageID := userStates.m[chatID]
 		userStates.RUnlock()
 
-		barberName := strings.TrimPrefix(data, "datte_")
-
-		bot.SelectOrder(chatID, botInstance, barberName, update, lastMessageID)
+		bot.SelectOrder(chatID, botInstance, barberName, orderDate, update, callback.Message.MessageID)
 	} else {
 		log.Printf("Unknown callback data: %s", data)
 	}
 }
 
+func handleMessage(msg *tgbotapi.Message) {
+	if msg.Text == "/start" {
+		handleStartCommand(msg)
+	} else {
+		db := config.GetDB()
+		if db == nil {
+			log.Println("Database connection is nil")
+			return
+		}
+
+		log.Printf("Received message: %s", msg.Text)
+		bot.Register(msg)
+	}
+}
+
 func handleStartCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
+	userID := msg.From.ID
+	log.Printf("Start komandasi bajarilmoqda, chat ID: %d, user ID: %d", chatID, userID)
 
 	db := config.GetDB()
 	if db == nil {
-		log.Println("Database connection is nil")
+		log.Println("Ma'lumotlar ombori bilan ulanish muammosi")
 		return
 	}
 
-	if _, err := db.Exec(`INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, msg.From.ID); err != nil {
-		log.Printf("Error inserting user ID into database: %v", err)
+	log.Println("Foydalanuvchi ma'lumotlar omboriga kiritilmoqda")
+	if _, err := db.Exec(`INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, userID); err != nil {
+		log.Printf("Foydalanuvchini ma'lumotlar omboriga kiritishda xatolik: %v", err)
 		return
 	}
 
-	user := storage.GetUserFromDB(int64(msg.From.ID))
-
-	var message string
-	if user == nil || user.Name == "" {
-		message = "Assalomu alaykum! Botga xush kelibsiz. Ismingizni kiriting, iltimos."
-		if msg.Text != "/start" {
-			handleMessage(msg)
-		}
-	} else {
-		message = fmt.Sprintf("Assalomu alaykum, %s! Botga xush kelibsiz.", user.Name)
-	}
-
-	msgSend := tgbotapi.NewMessage(chatID, message)
+	log.Println("Foydalanuvchi ma'lumotlari olinmoqda")
+	user := storage.GetUserFromDB(int64(userID))
+	log.Printf("Olingan foydalanuvchi: %+v", user)
 
 	botInstance := config.GetBot()
 	if botInstance == nil {
-		log.Println("Bot instance is nil")
+		log.Println("Bot instansiyasi bilan muammo")
 		return
 	}
 
+	var message string
+	if user == nil || user.Name == "" {
+		log.Println("Foydalanuvchi ro'yxatdan o'tmagan yoki ismi bo'sh")
+		message = "Assalomu alaykum! Botga xush kelibsiz. Ismingizni kiriting, iltimos."
+	} else {
+		message = fmt.Sprintf("Assalomu alaykum, %s! Botga xush kelibsiz.", user.Name)
+		bot.SelectBarber(chatID, botInstance)
+	}
+
+	msgSend := tgbotapi.NewMessage(chatID, message)
+	log.Printf("Xabar yuborilmoqda: %s", message)
+
 	sentMessage, err := botInstance.Send(msgSend)
 	if err != nil {
-		log.Printf("Error sending message: %v", err)
+		log.Printf("Xabar yuborishda xatolik: %v", err)
+		return
 	}
 
 	userStates.Lock()
 	userStates.m[chatID] = sentMessage.MessageID
 	userStates.Unlock()
-
-	if user != nil && user.Name != "" {
-		bot.SelectBarber(chatID, botInstance)
-	}
-}
-
-func handleMessage(msg *tgbotapi.Message) {
-	db := config.GetDB()
-	if db == nil {
-		log.Println("Database connection is nil")
-		return
-	}
-
-	log.Printf("Received message: %s", msg.Text)
-	bot.Register(msg)
 }

@@ -6,9 +6,10 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
+
 	"tgbot/models"
 	"tgbot/storage"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
@@ -71,11 +72,11 @@ func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
 	userStates.Unlock()
 }
 
-// SelectDate foydalanuvchiga sartarosh tanlagandan so'ng sanani tanlashni so'rash
+// SelectDate allows the user to select a date after selecting a barber
 func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, prevMessageID int) {
-	// Agar sartarosh nomi bo'sh bo'lsa, sanani tanlashni so'ramaslik
+	// Ensure a barber name is provided before selecting a date
 	if barberName == "" {
-		log.Println("Sartarosh tanlanmagan. Sanani tanlash o'tkaziladi.")
+		log.Println("No barber selected. Skipping date selection.")
 		return
 	}
 
@@ -83,34 +84,33 @@ func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, p
 	deleteMessage := tgbotapi.NewDeleteMessage(chatID, prevMessageID)
 	botInstance.Send(deleteMessage)
 
-	fmt.Println("Sanaga kirdi")
+	fmt.Println("Delete")
+	fmt.Println(deleteMessage)
 
-	// Bugungi sanani olish
+	// Get today's date
 	today := time.Now()
-	// Ertangi sanani olish
+	// Get tomorrow's date
 	tomorrow := today.AddDate(0, 0, 1)
-	// Ertagina kechasan sanani olish
+	// Get the day after tomorrow's date
 	dayAfterTomorrow := today.AddDate(0, 0, 2)
 
-	// Sanani tanlash tugmalari bilan ichki sartaroshni yaratish
+	// Create inline buttons for date selection with both barber name and date in callback data
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		// Birinchi qator (sanani tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(today.Format("02.01.2006"), fmt.Sprintf("datte_%s", today.Format("2006-01-02"))),
-			tgbotapi.NewInlineKeyboardButtonData(tomorrow.Format("02.01.2006"), fmt.Sprintf("datte_%s", tomorrow.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData(today.Format("02.01.2006"), fmt.Sprintf("datte_%s_%s", barberName, today.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData(tomorrow.Format("02.01.2006"), fmt.Sprintf("datte_%s_%s", barberName, tomorrow.Format("2006-01-02"))),
 		),
-		// Ikkinchi qator (sanani tanlash)
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(dayAfterTomorrow.Format("02.01.2006"), fmt.Sprintf("datte_%s", dayAfterTomorrow.Format("2006-01-02"))),
+			tgbotapi.NewInlineKeyboardButtonData(dayAfterTomorrow.Format("02.01.2006"), fmt.Sprintf("datte_%s_%s", barberName, dayAfterTomorrow.Format("2006-01-02"))),
 		),
 	)
 
-	// Sanani tanlash tugmalari bilan sanani jo'natish
+	// Send date selection message
 	dateSelectionMsg := tgbotapi.NewMessage(chatID, "Sana tanlang (kun.oy.yil):")
 	dateSelectionMsg.ReplyMarkup = &keyboard
 	sentMessage, err := botInstance.Send(dateSelectionMsg)
 	if err != nil {
-		log.Printf("Sanani tanlash klaviaturasini jo'natishda xatolik: %v", err)
+		log.Printf("Error sending date selection keyboard: %v", err)
 		return
 	}
 
@@ -120,79 +120,76 @@ func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, p
 	userStates.Unlock()
 }
 
-func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, update tgbotapi.Update, prevMessageID int) {
-	callbackData := update.CallbackQuery.Data
+func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, orderDate string, update tgbotapi.Update, prevMessageID int) {
+	// Delete the previous message
+	deleteDateMessage := tgbotapi.NewDeleteMessage(chatID, prevMessageID)
+	botInstance.Send(deleteDateMessage)
 
-	fmt.Println("Orderga kirdi")
-	fmt.Println("Sartarosh: ", barberName)
+	fmt.Println(deleteDateMessage)
 
-	if strings.Contains(strings.ToLower(callbackData), "datte_") {
-		fmt.Println("SANA:    ", callbackData)
+	fmt.Println("Entering order selection")
+	fmt.Println("Barber: ", barberName)
+	fmt.Println("Date: ", orderDate)
 
-		// Extract the date from the callback data
-		orderDate := strings.TrimPrefix(callbackData, "datte_")
-
-		// Fetch existing orders for the selected barber and date
-		order := models.GetOrders{
-			BarberID: barberName,
-			Date:     orderDate,
-		}
-
-		existingOrderTimes, err := storage.GetOrders(order)
-		if err != nil {
-			log.Printf("Error fetching orders: %v", err)
-			return
-		}
-
-		// Create a set of existing order times
-		existingTimesSet := make(map[string]struct{})
-		for _, time := range existingOrderTimes {
-			existingTimesSet[time] = struct{}{}
-		}
-
-		// Define the available time slots
-		timeSlots := []string{"9:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"}
-
-		// Create inline keyboard buttons for the time slots
-		var rows [][]tgbotapi.InlineKeyboardButton
-		for i := 0; i < len(timeSlots); i += 4 {
-			var row []tgbotapi.InlineKeyboardButton
-			for j := 0; j < 4 && i+j < len(timeSlots); j++ {
-				timeSlot := timeSlots[i+j]
-				if _, exists := existingTimesSet[timeSlot]; exists {
-					row = append(row, tgbotapi.NewInlineKeyboardButtonData("❌", "X"))
-				} else {
-					callbackData := fmt.Sprintf("confirm_%s_%s_%s", barberName, orderDate, timeSlot)
-					row = append(row, tgbotapi.NewInlineKeyboardButtonData(timeSlot, callbackData))
-				}
-			}
-			rows = append(rows, row)
-		}
-
-		keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
-
-		// Delete the previous message
-		deleteMessage := tgbotapi.NewDeleteMessage(chatID, prevMessageID)
-		botInstance.Send(deleteMessage)
-
-		// Send a message to the user to select a time slot
-		timeSelectionMsg := tgbotapi.NewMessage(chatID, "Navbat tanlang:")
-		timeSelectionMsg.ReplyMarkup = &keyboard
-		sentMessage, err := botInstance.Send(timeSelectionMsg)
-		if err != nil {
-			log.Printf("Navbat tanlash klaviaturasini jo'natishda xatolik: %v", err)
-			return
-		}
-
-		// Store the message ID in the user states
-		userStates.Lock()
-		userStates.m[chatID] = sentMessage.MessageID
-		userStates.Unlock()
+	// Fetch existing orders for the selected barber and date
+	order := models.GetOrders{
+		BarberID: barberName,
+		Date:     orderDate,
 	}
+
+	existingOrderTimes, err := storage.GetOrders(order)
+	if err != nil {
+		log.Printf("Error fetching orders: %v", err)
+		return
+	}
+
+	// Create a set of existing order times
+	existingTimesSet := make(map[string]struct{})
+	for _, time := range existingOrderTimes {
+		existingTimesSet[time] = struct{}{}
+	}
+
+	// Define the available time slots
+	timeSlots := []string{"9:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"}
+
+	// Create inline keyboard buttons for the time slots
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for i := 0; i < len(timeSlots); i += 4 {
+		var row []tgbotapi.InlineKeyboardButton
+		for j := 0; j < 4 && i+j < len(timeSlots); j++ {
+			timeSlot := timeSlots[i+j]
+			if _, exists := existingTimesSet[timeSlot]; exists {
+				row = append(row, tgbotapi.NewInlineKeyboardButtonData("❌", "X"))
+			} else {
+				callbackData := fmt.Sprintf("confirm_%s_%s_%s", barberName, orderDate, timeSlot)
+				row = append(row, tgbotapi.NewInlineKeyboardButtonData(timeSlot, callbackData))
+			}
+		}
+		rows = append(rows, row)
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
+
+	// Send a message to the user to select a time slot
+	timeSelectionMsg := tgbotapi.NewMessage(chatID, "Navbat tanlang:")
+	timeSelectionMsg.ReplyMarkup = &keyboard
+	sentMessage, err := botInstance.Send(timeSelectionMsg)
+	if err != nil {
+		log.Printf("Error sending time selection keyboard: %v", err)
+		return
+	}
+
+	// Store the message ID in the user states
+	userStates.Lock()
+	userStates.m[chatID] = sentMessage.MessageID
+	userStates.Unlock()
 }
 
-func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, orderDate string, orderTime string, update tgbotapi.Update) {
+func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, orderDate string, orderTime string, update tgbotapi.Update, prevMessageID int) {
 	callbackData := update.CallbackQuery.Data
+
+	deleteMessage := tgbotapi.NewDeleteMessage(chatID, update.CallbackQuery.Message.MessageID)
+		botInstance.Send(deleteMessage)
 
 	if strings.HasPrefix(callbackData, "confirm_") {
 		// Extract barber name, order date, and order time from the callback data
@@ -252,11 +249,11 @@ func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName s
 		}
 
 		// Send a confirmation message
-		 // Delete the previous message
+		// Delete the previous message
 		userStates.RLock()
-		lastMessageID := userStates.m[chatID]
+		//lastMessageID := userStates.m[chatID]
 		userStates.RUnlock()
-		deleteMessage := tgbotapi.NewDeleteMessage(chatID, lastMessageID)
+		deleteMessage := tgbotapi.NewDeleteMessage(chatID, update.CallbackQuery.Message.MessageID)
 		botInstance.Send(deleteMessage)
 
 		confirmationMsg := tgbotapi.NewMessage(chatID, "Navbat muvaffaqiyatli saqlandi!")
@@ -274,6 +271,6 @@ func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName s
 		userStates.RLock()
 		lastMessageID := userStates.m[chatID]
 		userStates.RUnlock()
-		SelectOrder(chatID, botInstance, barberName, update, lastMessageID)
+		SelectOrder(chatID, botInstance, barberName, orderDate, update, lastMessageID)
 	}
 }

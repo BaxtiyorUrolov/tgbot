@@ -56,6 +56,8 @@ func SaveUserToDB(user *models.User) {
 
 	fmt.Println("Saving user: ", user.Name)
 
+	fmt.Println("Phone: ", user.Phone)
+
 	db := config.GetDB()
 	if db == nil {
 		log.Println("Database connection is nil")
