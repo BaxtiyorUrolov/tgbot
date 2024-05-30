@@ -19,8 +19,8 @@ import (
 
 var userStates = struct {
 	sync.RWMutex
-	m map[int64]string
-}{m: make(map[int64]string)}
+	m map[int64]int
+}{m: make(map[int64]int)}
 
 func main() {
 	// Ma'lumotlar omboriga ulanish uchun konfiguratsiyani sozlash
@@ -134,19 +134,21 @@ func handleCallbackQuery(update tgbotapi.Update) {
 
 		// Store the barber name in the user state map
 		userStates.Lock()
-		userStates.m[chatID] = barberName
+		userStates.m[chatID] = callback.Message.MessageID
 		userStates.Unlock()
 
-		bot.SelectDate(callback.Message.Chat.ID, botInstance, barberName, update)
+		bot.SelectDate(chatID, botInstance, barberName, callback.Message.MessageID)
 	} else if strings.HasPrefix(data, "datte_") {
 		// Check if the callback data contains "datte_" to identify date selection
 
 		// Retrieve the barber name from the user state map
 		userStates.RLock()
-		barberName := userStates.m[chatID]
+		lastMessageID := userStates.m[chatID]
 		userStates.RUnlock()
 
-		bot.SelectOrder(callback.Message.Chat.ID, botInstance, barberName, update)
+		barberName := strings.TrimPrefix(data, "datte_")
+
+		bot.SelectOrder(chatID, botInstance, barberName, update, lastMessageID)
 	} else {
 		log.Printf("Unknown callback data: %s", data)
 	}
@@ -186,9 +188,14 @@ func handleStartCommand(msg *tgbotapi.Message) {
 		return
 	}
 
-	if _, err := botInstance.Send(msgSend); err != nil {
+	sentMessage, err := botInstance.Send(msgSend)
+	if err != nil {
 		log.Printf("Error sending message: %v", err)
 	}
+
+	userStates.Lock()
+	userStates.m[chatID] = sentMessage.MessageID
+	userStates.Unlock()
 
 	if user != nil && user.Name != "" {
 		bot.SelectBarber(chatID, botInstance)
