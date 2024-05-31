@@ -14,3 +14,11 @@ type User struct {
 	Name  string
 	Phone string
 }
+
+type Barber struct {
+	ID    int64
+	Name  string
+	UserName string
+	Phone string
+	Admin string
+}

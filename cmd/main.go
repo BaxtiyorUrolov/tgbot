@@ -7,21 +7,17 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 
 	"tgbot/bot"
 	"tgbot/config"
 	"tgbot/models"
+	"tgbot/state"
 	"tgbot/storage"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
-
-var userStates = struct {
-	sync.RWMutex
-	m map[int64]int
-}{m: make(map[int64]int)}
 
 func main() {
 	// Ma'lumotlar omboriga ulanish uchun konfiguratsiyani sozlash
@@ -54,7 +50,7 @@ func main() {
 	}
 
 	// Interrupt va syscall signal qabul qilish uchun kontekstni sozlash
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	// Bot yangiliklarini qabul qilish uchun botning GetUpdates funksiyasidan foydalanish
@@ -134,9 +130,9 @@ func handleCallbackQuery(update tgbotapi.Update) {
 		barberName := strings.TrimPrefix(data, "select_date_")
 
 		// Store the barber name in the user state map
-		userStates.Lock()
-		userStates.m[chatID] = callback.Message.MessageID
-		userStates.Unlock()
+		state.UserStates.Lock()
+		state.UserStates.M[chatID] = "select_date"
+		state.UserStates.Unlock()
 
 		bot.SelectDate(chatID, botInstance, barberName, callback.Message.MessageID)
 	} else if strings.HasPrefix(data, "datte_") {
@@ -151,9 +147,8 @@ func handleCallbackQuery(update tgbotapi.Update) {
 		barberName := dataParts[0]
 		orderDate := dataParts[1]
 
-		userStates.RLock()
-		//lastMessageID := userStates.m[chatID]
-		userStates.RUnlock()
+		state.UserStates.RLock()
+		state.UserStates.RUnlock()
 
 		bot.SelectOrder(chatID, botInstance, barberName, orderDate, update, callback.Message.MessageID)
 	} else {
@@ -162,18 +157,53 @@ func handleCallbackQuery(update tgbotapi.Update) {
 }
 
 func handleMessage(msg *tgbotapi.Message) {
-	if msg.Text == "/start" {
-		handleStartCommand(msg)
-	} else {
-		db := config.GetDB()
-		if db == nil {
-			log.Println("Database connection is nil")
-			return
-		}
+	chatID := msg.Chat.ID
+	text := msg.Text
 
-		log.Printf("Received message: %s", msg.Text)
-		bot.Register(msg)
+	if text == "/start" {
+		handleStartCommand(msg)
+	} else if text == "/admin" {
+		handleAdminCommand(msg)
+	} else if text == "Statistika" {
+		bot.HandleAdminStatistics(chatID, config.GetBot())
+	} else if text == "Barber qo'shish" {
+		bot.HandleAdminAddBarber(chatID, config.GetBot())
+	} else if text == "Barber o'chirish" {
+		bot.HandleAdminDeleteBarber(chatID, config.GetBot())
+	} else {
+		state.UserStates.RLock()
+		currentState, exists := state.UserStates.M[chatID]
+		state.UserStates.RUnlock()
+
+		if !exists {
+			handleDefaultMessage(msg)
+		} else {
+			switch currentState {
+			case "adding_barber_id":
+				bot.HandleAddBarberID(msg)
+			case "adding_barber_name":
+				bot.HandleAddBarberName(msg)
+			case "adding_barber_username":
+				bot.HandleAddBarberUserName(msg)
+			case "adding_barber_phone":
+				bot.HandleAddBarberPhone(msg)
+			default:
+				handleDefaultMessage(msg)
+			}
+		}
 	}
+}
+
+func handleAdminCommand(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+
+	botInstance := config.GetBot()
+	if botInstance == nil {
+		log.Println("Bot instance is nil")
+		return
+	}
+
+	bot.Admin(chatID, botInstance)
 }
 
 func handleStartCommand(msg *tgbotapi.Message) {
@@ -215,13 +245,17 @@ func handleStartCommand(msg *tgbotapi.Message) {
 	msgSend := tgbotapi.NewMessage(chatID, message)
 	log.Printf("Xabar yuborilmoqda: %s", message)
 
-	sentMessage, err := botInstance.Send(msgSend)
+	_, err := botInstance.Send(msgSend)
 	if err != nil {
 		log.Printf("Xabar yuborishda xatolik: %v", err)
 		return
 	}
 
-	userStates.Lock()
-	userStates.m[chatID] = sentMessage.MessageID
-	userStates.Unlock()
+	state.UserStates.Lock()
+	state.UserStates.M[chatID] = "start"
+	state.UserStates.Unlock()
+}
+
+func handleDefaultMessage(msg *tgbotapi.Message) {
+	// Handle any other messages here
 }

@@ -113,3 +113,23 @@ func SaveOrder(order models.Order) error {
 	}
 	return nil
 }
+
+func AddBarber(barber models.Barber) error {
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return fmt.Errorf("database connection is nil")
+	}
+
+	_, err := db.Exec("INSERT INTO barbers (id, name, user_name, phone) VALUES ($1, $2, $3, $4)",
+		barber.ID, 
+		barber.Name,
+		barber.UserName,
+		barber.Phone,
+	)
+	if err != nil {
+		log.Printf("Error inserting order into database: %v", err)
+		return err
+	}
+	return nil
+}

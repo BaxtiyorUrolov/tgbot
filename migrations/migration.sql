@@ -1,5 +1,6 @@
 -- Create status_type enum
 CREATE TYPE "status_type" AS ENUM ('in_process', 'done', 'cancel');
+CREATE TYPE "admin_type" AS ENUM ('admin', 'barber');
 
 -- Create users table
 CREATE TABLE IF NOT EXISTS users (
@@ -14,9 +15,11 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Create barbers table
 CREATE TABLE IF NOT EXISTS barbers (
-    id UUID PRIMARY KEY NOT NULL,
+    id BIGINT UNIQUE NOT NULL,
     name VARCHAR(30) UNIQUE NOT NULL,
-    phone VARCHAR(13)
+    user_name VARCHAR(30),
+    phone VARCHAR(13),
+    admin admin_type DEFAULT 'barber'
 );
 
 -- Create orders table
