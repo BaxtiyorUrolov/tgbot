@@ -135,10 +135,15 @@ func handleCallbackQuery(update tgbotapi.Update) {
 		bot.SelectOrder(chatID, botInstance, barberName, orderDate, update, callback.Message.MessageID)
 	} else if strings.HasPrefix(data, "confirm_") || strings.HasPrefix(data, "book_") || data == "back" {
 		bot.HandleConfirmation(chatID, botInstance, callback, update)
+	} else if strings.HasPrefix(data, "cancel_") {
+		bot.HandleCancelOrder(callback, update)
+	} else if strings.HasPrefix(data, "done_") {
+		bot.HandleCompleteOrder(callback, update)
 	} else {
 		log.Printf("Unknown callback data: %s", data)
 	}
 }
+
 
 func handleMessage(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID

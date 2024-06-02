@@ -8,8 +8,6 @@ CREATE TABLE IF NOT EXISTS users (
     user_id BIGINT UNIQUE NOT NULL,
     name VARCHAR(30),
     phone VARCHAR(30) UNIQUE,
-    order_time TIMESTAMP,
-    last_order_date VARCHAR(30),
     created_at TIMESTAMP DEFAULT NOW()
 );
 

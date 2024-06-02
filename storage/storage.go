@@ -161,6 +161,23 @@ func GetBarber(ID int) string {
 	return name
 }
 
+func GetUserIDByOrderDetails(barberName, orderDate, orderTime string) int64 {
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return 0
+	}
+
+	var userID int64
+	err := db.QueryRow("SELECT user_id FROM orders WHERE barber_name = $1 AND order_date = $2 AND order_time = $3", barberName, orderDate, orderTime).Scan(&userID)
+	if err != nil {
+		log.Printf("Error querying user_id by order details: %v", err)
+		return 0
+	}
+
+	return userID
+}
+
 func AddBarber(barber models.Barber) error {
 	db := config.GetDB()
 	if db == nil {
@@ -208,3 +225,37 @@ func GetBarbers() ([]models.Barber, error) {
 
 	return barbers, nil
 }
+
+func DeleteOrder(barberName, orderDate, orderTime string) error {
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return fmt.Errorf("database connection is nil")
+	}
+
+	_, err := db.Exec("DELETE FROM orders WHERE barber_name = $1 AND order_date = $2 AND order_time = $3", barberName, orderDate, orderTime)
+	if err != nil {
+		log.Printf("Error deleting order: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func CompleteOrder(barberName, orderDate, orderTime string) error {
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return fmt.Errorf("database connection is nil")
+	}
+
+	_, err := db.Exec("UPDATE orders SET status = 'done' WHERE barber_name = $1 AND order_date = $2 AND order_time = $3", barberName, orderDate, orderTime)
+	if err != nil {
+		log.Printf("Error completing order: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+

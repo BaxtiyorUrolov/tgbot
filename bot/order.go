@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"tgbot/config"
 	"tgbot/models"
 	"tgbot/storage"
 
@@ -275,9 +276,83 @@ func sendOrderDetailsToBarber(order models.Order, botInstance *tgbotapi.BotAPI) 
 	}
 
 	message := fmt.Sprintf("Yangi buyurtma:\nSartarosh: %s\nSana: %s\nVaqt: %s\nFoydalanuvchi ID: %d", order.BarberName, order.OrderDate, order.OrderTime, order.UserID)
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Buyurtmani bekor qilish", fmt.Sprintf("cancel_%s_%s_%s", order.BarberName, order.OrderDate, order.OrderTime)),
+			tgbotapi.NewInlineKeyboardButtonData("Buyurtma bajarildi", fmt.Sprintf("done_%s_%s_%s", order.BarberName, order.OrderDate, order.OrderTime)),
+		),
+	)
+
 	barberMessage := tgbotapi.NewMessage(barberChatID, message)
+	barberMessage.ReplyMarkup = keyboard
+
 	_, err = botInstance.Send(barberMessage)
 	if err != nil {
 		log.Printf("Buyurtma ma'lumotlarini sartaroshga yuborishda xatolik: %v", err)
 	}
 }
+
+
+func HandleCancelOrder(callback *tgbotapi.CallbackQuery, update tgbotapi.Update) {
+	data := strings.Split(callback.Data, "_")
+	if len(data) < 4 {
+		log.Println("Bekor qilish uchun noto'g'ri callback ma'lumotlari")
+		return
+	}
+	barberName := data[1]
+	orderDate := data[2]
+	orderTime := data[3]
+
+	userID := storage.GetUserIDByOrderDetails(barberName, orderDate, orderTime)
+
+	err := storage.DeleteOrder(barberName, orderDate, orderTime)
+	if err != nil {
+		log.Printf("Buyurtmani o'chirishda xatolik: %v", err)
+		botInstance := config.GetBot()
+		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Buyurtmani o'chirishda xatolik yuz berdi.")
+		botInstance.Send(msg)
+		return
+	}
+
+	botInstance := config.GetBot()
+	msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Buyurtma muvaffaqiyatli bekor qilindi.")
+	botInstance.Send(msg)
+
+	// Foydalanuvchiga xabar yuborish
+	if userID != 0 {
+		userMsg := tgbotapi.NewMessage(userID, "Sizning buyurtmangiz bekor qilindi.")
+		botInstance.Send(userMsg)
+	}
+}
+
+func HandleCompleteOrder(callback *tgbotapi.CallbackQuery, update tgbotapi.Update) {
+	data := strings.Split(callback.Data, "_")
+	if len(data) < 4 {
+		log.Println("Tasdiqlash uchun noto'g'ri callback ma'lumotlari")
+		return
+	}
+	barberName := data[1]
+	orderDate := data[2]
+	orderTime := data[3]
+
+	err := storage.CompleteOrder(barberName, orderDate, orderTime)
+	if err != nil {
+		log.Printf("Buyurtmani yakunlashda xatolik: %v", err)
+		botInstance := config.GetBot()
+		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Buyurtmani yakunlashda xatolik yuz berdi.")
+		botInstance.Send(msg)
+		return
+	}
+
+	botInstance := config.GetBot()
+	msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Buyurtma muvaffaqiyatli yakunlandi.")
+	botInstance.Send(msg)
+
+	// Foydalanuvchiga xabar yuborish
+	userID := storage.GetUserIDByOrderDetails(barberName, orderDate, orderTime)
+	if userID != 0 {
+		userMsg := tgbotapi.NewMessage(userID, "Sizning buyurtmangiz bajarildi.")
+		botInstance.Send(userMsg)
+	}
+}
+
