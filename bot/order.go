@@ -21,11 +21,23 @@ var userStates = struct {
 
 func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
 	photoFilePath := "./photo.jpg"
-	caption := "Please select a barber:"
+	caption := "Iltimos, sartaroshni tanlang:"
 
 	photoFileBytes, err := ioutil.ReadFile(photoFilePath)
 	if err != nil {
-		log.Printf("Error reading photo file: %v", err)
+		log.Printf("Rasmni o'qishda xatolik: %v", err)
+		return
+	}
+
+	barbers, err := storage.GetBarbers()
+	if err != nil {
+		log.Printf("Sartaroshlarni olishda xatolik: %v", err)
+		return
+	}
+
+	if len(barbers) == 0 {
+		msg := tgbotapi.NewMessage(chatID, "Sartaroshlar mavjud emas.")
+		botInstance.Send(msg)
 		return
 	}
 
@@ -35,24 +47,22 @@ func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
 	})
 	msg.Caption = caption
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Baxtiyor", "select_date_Baxtiyor"),
-			tgbotapi.NewInlineKeyboardButtonData("Ali", "select_date_Ali"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Aziz", "select_date_Aziz"),
-			tgbotapi.NewInlineKeyboardButtonData("Obid", "select_date_Obid"),
-		),
-	)
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, barber := range barbers {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(barber.Name, fmt.Sprintf("select_date_%s", barber.Name)),
+		))
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	msg.ReplyMarkup = &keyboard
 
 	sentMessage, err := botInstance.Send(msg)
 	if err != nil {
-		log.Printf("Error sending photo: %v", err)
+		log.Printf("Rasmni yuborishda xatolik: %v", err)
 	}
 
-	log.Println("Sent barber selection buttons")
+	log.Println("Sartarosh tanlash tugmalari yuborildi")
 
 	userStates.Lock()
 	userStates.m[chatID] = sentMessage.MessageID
@@ -61,7 +71,7 @@ func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
 
 func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, prevMessageID int) {
 	if barberName == "" {
-		log.Println("No barber selected. Skipping date selection.")
+		log.Println("Sartarosh tanlanmadi. Sana tanlashni o'tkazib yuborish.")
 		return
 	}
 
@@ -82,11 +92,11 @@ func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, p
 		),
 	)
 
-	dateSelectionMsg := tgbotapi.NewMessage(chatID, "Please select a date (day.month.year):")
+	dateSelectionMsg := tgbotapi.NewMessage(chatID, "Iltimos, sana tanlang (kun.oy.yil):")
 	dateSelectionMsg.ReplyMarkup = &keyboard
 	sentMessage, err := botInstance.Send(dateSelectionMsg)
 	if err != nil {
-		log.Printf("Error sending date selection keyboard: %v", err)
+		log.Printf("Sana tanlash klaviaturasini yuborishda xatolik: %v", err)
 		return
 	}
 
@@ -106,7 +116,7 @@ func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, 
 
 	existingOrderTimes, err := storage.GetOrders(order)
 	if err != nil {
-		log.Printf("Error fetching orders: %v", err)
+		log.Printf("Buyurtmalarni olishda xatolik: %v", err)
 		return
 	}
 
@@ -134,11 +144,11 @@ func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, 
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
 
-	timeSelectionMsg := tgbotapi.NewMessage(chatID, "Please select a time:")
+	timeSelectionMsg := tgbotapi.NewMessage(chatID, "Iltimos, vaqt tanlang:")
 	timeSelectionMsg.ReplyMarkup = &keyboard
 	sentMessage, err := botInstance.Send(timeSelectionMsg)
 	if err != nil {
-		log.Printf("Error sending time selection keyboard: %v", err)
+		log.Printf("Vaqt tanlash klaviaturasini yuborishda xatolik: %v", err)
 		return
 	}
 
@@ -147,34 +157,35 @@ func SelectOrder(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, 
 	userStates.Unlock()
 }
 
-func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, orderDate string, orderTime string, update tgbotapi.Update, prevMessageID int) {
-	callbackData := update.CallbackQuery.Data
+func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, update tgbotapi.Update) {
+	callbackData := callback.Data
 
-	deleteMessage := tgbotapi.NewDeleteMessage(chatID, update.CallbackQuery.Message.MessageID)
+	deleteMessage := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
 	botInstance.Send(deleteMessage)
 
 	if strings.HasPrefix(callbackData, "confirm_") {
 		data := strings.Split(callbackData, "_")
 		if len(data) < 4 {
-			log.Println("Invalid callback data for confirmation")
+			log.Println("Tasdiqlash uchun noto'g'ri callback ma'lumotlari")
 			return
 		}
 		barberName := data[1]
 		orderDate := data[2]
 		orderTime := data[3]
 
+		// Buyurtmani tasdiqlash tugmasini yuborish
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Confirm", fmt.Sprintf("book_%s_%s_%s", barberName, orderDate, orderTime)),
-				tgbotapi.NewInlineKeyboardButtonData("Back", "back"),
+				tgbotapi.NewInlineKeyboardButtonData("Tasdiqlash", fmt.Sprintf("book_%s_%s_%s", barberName, orderDate, orderTime)),
+				tgbotapi.NewInlineKeyboardButtonData("Ortga qaytish", "back"),
 			),
 		)
 
-		confirmationMsg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Do you want to book on %s at %s?", orderDate, orderTime))
+		confirmationMsg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Siz %s kuni %s vaqtida buyurtma qilishni xohlaysizmi?", orderDate, orderTime))
 		confirmationMsg.ReplyMarkup = &keyboard
 		sentMessage, err := botInstance.Send(confirmationMsg)
 		if err != nil {
-			log.Printf("Error sending confirmation message: %v", err)
+			log.Printf("Tasdiqlash xabarini yuborishda xatolik: %v", err)
 			return
 		}
 
@@ -184,13 +195,26 @@ func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName s
 	} else if strings.HasPrefix(callbackData, "book_") {
 		data := strings.Split(callbackData, "_")
 		if len(data) < 4 {
-			log.Println("Invalid callback data for booking")
+			log.Println("Buyurtma qilish uchun noto'g'ri callback ma'lumotlari")
 			return
 		}
 		barberName := data[1]
 		orderDate := data[2]
 		orderTime := data[3]
 
+		// Foydalanuvchida mavjud bo'lgan in_process statusli buyurtmani tekshirish
+		hasInProcess, err := storage.HasInProcessOrder(int64(update.CallbackQuery.From.ID))
+		if err != nil {
+			log.Printf("Buyurtmalarni tekshirishda xatolik: %v", err)
+			return
+		}
+		if hasInProcess {
+			confirmationMsg := tgbotapi.NewMessage(chatID, "Sizda hali bajarilmagan buyurtma mavjud. Yangi buyurtma qilishdan oldin uni yakunlang.")
+			botInstance.Send(confirmationMsg)
+			return
+		}
+
+		// Buyurtmani saqlash
 		order := models.Order{
 			BarberName: barberName,
 			UserID:     update.CallbackQuery.From.ID,
@@ -200,39 +224,60 @@ func HandleConfirmation(chatID int64, botInstance *tgbotapi.BotAPI, barberName s
 		}
 
 		if err := storage.SaveOrder(order); err != nil {
-			log.Printf("Error saving order: %v", err)
+			log.Printf("Buyurtmani saqlashda xatolik: %v", err)
 			return
 		}
 
 		userStates.RLock()
 		userStates.RUnlock()
-		deleteMessage := tgbotapi.NewDeleteMessage(chatID, update.CallbackQuery.Message.MessageID)
+		deleteMessage := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
 		botInstance.Send(deleteMessage)
 
-		confirmationMsg := tgbotapi.NewMessage(chatID, "Order successfully saved!")
+		confirmationMsg := tgbotapi.NewMessage(chatID, "Buyurtma muvaffaqiyatli saqlandi!")
 		sentMessage, err := botInstance.Send(confirmationMsg)
 		if err != nil {
-			log.Printf("Error sending confirmation message: %v", err)
+			log.Printf("Tasdiqlash xabarini yuborishda xatolik: %v", err)
 		}
 
 		userStates.Lock()
 		userStates.m[chatID] = sentMessage.MessageID
 		userStates.Unlock()
 
-		sendOrderDetailsToChannel(order, botInstance)
+		sendOrderDetailsToBarber(order, botInstance)
 	} else if callbackData == "back" {
 		userStates.RLock()
 		lastMessageID := userStates.m[chatID]
 		userStates.RUnlock()
+		barberName := strings.Split(callbackData, "_")[1]
+		orderDate := strings.Split(callbackData, "_")[2]
 		SelectOrder(chatID, botInstance, barberName, orderDate, update, lastMessageID)
 	}
 }
 
-func sendOrderDetailsToChannel(order models.Order, botInstance *tgbotapi.BotAPI) {
-	message := fmt.Sprintf("New Order:\nBarber: %s\nDate: %s\nTime: %s\nUser ID: %d", order.BarberName, order.OrderDate, order.OrderTime, order.UserID)
-	channelMessage := tgbotapi.NewMessageToChannel("@BMC_Director", message)
-	_, err := botInstance.Send(channelMessage)
+func sendOrderDetailsToBarber(order models.Order, botInstance *tgbotapi.BotAPI) {
+	barbers, err := storage.GetBarbers()
 	if err != nil {
-		log.Printf("Error sending order details to channel: %v", err)
+		log.Printf("Sartaroshlarni olishda xatolik: %v", err)
+		return
+	}
+
+	var barberChatID int64
+	for _, barber := range barbers {
+		if barber.Name == order.BarberName {
+			barberChatID = barber.ID
+			break
+		}
+	}
+
+	if barberChatID == 0 {
+		log.Printf("Sartarosh chat ID topilmadi: %s", order.BarberName)
+		return
+	}
+
+	message := fmt.Sprintf("Yangi buyurtma:\nSartarosh: %s\nSana: %s\nVaqt: %s\nFoydalanuvchi ID: %d", order.BarberName, order.OrderDate, order.OrderTime, order.UserID)
+	barberMessage := tgbotapi.NewMessage(barberChatID, message)
+	_, err = botInstance.Send(barberMessage)
+	if err != nil {
+		log.Printf("Buyurtma ma'lumotlarini sartaroshga yuborishda xatolik: %v", err)
 	}
 }

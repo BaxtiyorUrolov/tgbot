@@ -29,7 +29,7 @@ func main() {
 		Name:     "tgbot",
 	}
 	// Bot tokenini olish
-	botToken := "6902655696:AAGLciESTPSVwmWZlxz8fkrY0EC-Fl7qo_I"
+	botToken := "6588290150:AAH4WJpey4hnCVj7Dtr8P-l_9nlssQRdWo0"
 
 	// Konfiguratsiyani sozlash va boshlash
 	if err := config.Setup(dbConfig, botToken); err != nil {
@@ -79,29 +79,11 @@ func main() {
 func HandleUpdate(update tgbotapi.Update) {
 	// Handle the update based on its type
 	if update.Message != nil {
-		fmt.Println("bu yer start")
-		// Logic for handling regular messages
 		handleMessage(update.Message)
 	} else if update.InlineQuery != nil {
-		// Logic for handling inline queries
-		fmt.Println("bu yer inline")
 		handleInlineQuery(update.InlineQuery)
 	} else if update.CallbackQuery != nil {
-		fmt.Println("bu yer callback")
-		// Logic for handling callback queries
-		callback := update.CallbackQuery
-		if strings.HasPrefix(callback.Data, "confirm_") || strings.HasPrefix(callback.Data, "book_") || callback.Data == "back" {
-			// Handle confirmation or booking
-			data := strings.Split(callback.Data, "_")
-			if len(data) >= 4 {
-				barberName := data[1]
-				orderDate := data[2]
-				orderTime := data[3]
-				bot.HandleConfirmation(callback.Message.Chat.ID, config.GetBot(), barberName, orderDate, orderTime, update, callback.Message.MessageID)
-			}
-		} else {
-			handleCallbackQuery(update)
-		}
+		handleCallbackQuery(update)
 	} else {
 		log.Printf("Received unsupported update type: %T", update)
 	}
@@ -151,6 +133,8 @@ func handleCallbackQuery(update tgbotapi.Update) {
 		state.UserStates.RUnlock()
 
 		bot.SelectOrder(chatID, botInstance, barberName, orderDate, update, callback.Message.MessageID)
+	} else if strings.HasPrefix(data, "confirm_") || strings.HasPrefix(data, "book_") || data == "back" {
+		bot.HandleConfirmation(chatID, botInstance, callback, update)
 	} else {
 		log.Printf("Unknown callback data: %s", data)
 	}
@@ -159,17 +143,24 @@ func handleCallbackQuery(update tgbotapi.Update) {
 func handleMessage(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	text := msg.Text
+	botInstance := config.GetBot()
 
 	if text == "/start" {
 		handleStartCommand(msg)
 	} else if text == "/admin" {
 		handleAdminCommand(msg)
+	} else if text == "/barber" {
+		handleBarberCommand(msg)
 	} else if text == "Statistika" {
-		bot.HandleAdminStatistics(chatID, config.GetBot())
+		bot.HandleAdminStatistics(chatID, botInstance)
 	} else if text == "Barber qo'shish" {
-		bot.HandleAdminAddBarber(chatID, config.GetBot())
+		bot.HandleAdminAddBarber(chatID, botInstance)
+	} else if text == "Buyurtma qo'shish" {
+		name := storage.GetBarber(int(chatID))
+		fmt.Println(name)
+		bot.SelectDate(chatID, botInstance, name, 0)
 	} else if text == "Barber o'chirish" {
-		bot.HandleAdminDeleteBarber(chatID, config.GetBot())
+		bot.HandleAdminDeleteBarber(chatID, botInstance)
 	} else {
 		state.UserStates.RLock()
 		currentState, exists := state.UserStates.M[chatID]
@@ -204,6 +195,18 @@ func handleAdminCommand(msg *tgbotapi.Message) {
 	}
 
 	bot.Admin(chatID, botInstance)
+}
+
+func handleBarberCommand(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+
+	botInstance := config.GetBot()
+	if botInstance == nil {
+		log.Println("Bot instance is nil")
+		return
+	}
+
+	bot.Barber(chatID, botInstance)
 }
 
 func handleStartCommand(msg *tgbotapi.Message) {
