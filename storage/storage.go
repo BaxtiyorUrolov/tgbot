@@ -242,6 +242,22 @@ func DeleteOrder(barberName, orderDate, orderTime string) error {
 	return nil
 }
 
+func DeleteBarber(barberName string) error {
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return fmt.Errorf("database connection is nil")
+	}
+
+	_, err := db.Exec("DELETE FROM barbers WHERE name = $1 ", barberName)
+	if err != nil {
+		log.Printf("Error deleting order: %v", err)
+		return err
+	}
+
+	return nil
+}
+
 func CompleteOrder(barberName, orderDate, orderTime string) error {
 	db := config.GetDB()
 	if db == nil {

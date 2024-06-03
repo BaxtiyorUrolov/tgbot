@@ -71,17 +71,11 @@ func main() {
 func HandleUpdate(update tgbotapi.Update) {
 	if update.Message != nil {
 		handleMessage(update.Message)
-	} else if update.InlineQuery != nil {
-		handleInlineQuery(update.InlineQuery)
-	} else if update.CallbackQuery != nil {
+	}else if update.CallbackQuery != nil {
 		handleCallbackQuery(update)
 	} else {
 		log.Printf("Qabul qilingan qo'llab-quvvatlanmaydigan yangilanish turi: %T", update)
 	}
-}
-
-func handleInlineQuery(inline *tgbotapi.InlineQuery) {
-	log.Printf("Inline so'rov qabul qilindi: %s", inline.Query)
 }
 
 func handleCallbackQuery(update tgbotapi.Update) {
@@ -104,6 +98,15 @@ func handleCallbackQuery(update tgbotapi.Update) {
 		state.UserStates.Unlock()
 
 		bot.SelectDate(chatID, botInstance, barberName, callback.Message.MessageID)
+	} else if strings.HasPrefix(data, "delete_") {
+		barberName := strings.TrimPrefix(data, "delete_")
+		bot.HandleDeleteBarberCallback(chatID, barberName, botInstance, callback.Message.MessageID)
+	} else if strings.HasPrefix(data, "confirm_delete_") {
+		barberName := strings.TrimPrefix(data, "confirm_delete_")
+		bot.HandleDeleteBarberConfirmation(chatID, barberName, botInstance, callback.Message.MessageID)
+	} else if data == "cancel_delete" {
+		msg := tgbotapi.NewMessage(chatID, "Barberni o'chirish bekor qilindi.")
+		botInstance.Send(msg)
 	} else if strings.HasPrefix(data, "datte_") {
 		dataParts := strings.Split(strings.TrimPrefix(data, "datte_"), "_")
 		if len(dataParts) < 2 {
@@ -127,6 +130,7 @@ func handleCallbackQuery(update tgbotapi.Update) {
 		log.Printf("Noma'lum callback ma'lumotlari: %s", data)
 	}
 }
+
 
 func handleMessage(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID

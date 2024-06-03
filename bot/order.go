@@ -303,7 +303,9 @@ func sendOrderDetailsToBarber(order models.Order, botInstance *tgbotapi.BotAPI) 
 		return
 	}
 
-	message := fmt.Sprintf("Yangi buyurtma:\nSartarosh: %s\nSana: %s\nVaqt: %s\nFoydalanuvchi ID: %d", order.BarberName, order.OrderDate, order.OrderTime, order.UserID)
+	user := storage.GetUserFromDB(int64(order.UserID))
+
+	message := fmt.Sprintf("Yangi buyurtma:\nSartarosh: %s\nSana: %s\nVaqt: %s\nFoydalanuvchi telefon raqami: %s", order.BarberName, order.OrderDate, order.OrderTime, user.Phone)
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Buyurtmani bekor qilish", fmt.Sprintf("cancel_%s_%s_%s", order.BarberName, order.OrderDate, order.OrderTime)),
