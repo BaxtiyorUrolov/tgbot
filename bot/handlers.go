@@ -16,6 +16,7 @@ var tempBarbers = struct {
 	M map[int64]models.Barber
 }{M: make(map[int64]models.Barber)}
 
+
 func HandleAdminStatistics(chatID int64, botInstance *tgbotapi.BotAPI) {
 	msg := tgbotapi.NewMessage(chatID, "Statistika: (bu yerda statistikani chiqaring)")
 	botInstance.Send(msg)

@@ -49,10 +49,37 @@ func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
 	msg.Caption = caption
 
 	var rows [][]tgbotapi.InlineKeyboardButton
-	for _, barber := range barbers {
+	switch len(barbers) {
+	case 1:
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(barber.Name, fmt.Sprintf("select_date_%s", barber.Name)),
+			tgbotapi.NewInlineKeyboardButtonData(barbers[0].Name, fmt.Sprintf("select_date_%s", barbers[0].Name)),
 		))
+	case 2:
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(barbers[0].Name, fmt.Sprintf("select_date_%s", barbers[0].Name)),
+			tgbotapi.NewInlineKeyboardButtonData(barbers[1].Name, fmt.Sprintf("select_date_%s", barbers[1].Name)),
+		))
+	case 3:
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(barbers[0].Name, fmt.Sprintf("select_date_%s", barbers[0].Name)),
+			tgbotapi.NewInlineKeyboardButtonData(barbers[1].Name, fmt.Sprintf("select_date_%s", barbers[1].Name)),
+		))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(barbers[2].Name, fmt.Sprintf("select_date_%s", barbers[2].Name)),
+		))
+	default:
+		for i := 0; i < len(barbers); i += 2 {
+			if i+1 < len(barbers) {
+				rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData(barbers[i].Name, fmt.Sprintf("select_date_%s", barbers[i].Name)),
+					tgbotapi.NewInlineKeyboardButtonData(barbers[i+1].Name, fmt.Sprintf("select_date_%s", barbers[i+1].Name)),
+				))
+			} else {
+				rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData(barbers[i].Name, fmt.Sprintf("select_date_%s", barbers[i].Name)),
+				))
+			}
+		}
 	}
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
@@ -69,6 +96,7 @@ func SelectBarber(chatID int64, botInstance *tgbotapi.BotAPI) {
 	userStates.m[chatID] = sentMessage.MessageID
 	userStates.Unlock()
 }
+
 
 func SelectDate(chatID int64, botInstance *tgbotapi.BotAPI, barberName string, prevMessageID int) {
 	if barberName == "" {

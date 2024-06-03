@@ -1,11 +1,11 @@
 package bot
 
 import (
-	"fmt"
 	"log"
 	"sync"
 	"tgbot/config"
 	"tgbot/models"
+	"tgbot/state"
 	"tgbot/storage"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -16,96 +16,96 @@ var tempUserData = struct {
 	data map[int64]*models.User
 }{data: make(map[int64]*models.User)}
 
-func Register(msg *tgbotapi.Message) {
+func Register(chatID int64, botInstance *tgbotapi.BotAPI) {
+	msg := tgbotapi.NewMessage(chatID, "Ismingizni kiriting, iltimos.")
+	_, err := botInstance.Send(msg)
+	if err != nil {
+		log.Printf("Ism so'rovini yuborishda xatolik: %v", err)
+		return
+	}
+	log.Printf("Foydalanuvchidan ism so'ralmoqda: %d", chatID)
+
+	state.UserStates.Lock()
+	state.UserStates.M[chatID] = "register_name"
+	log.Printf("Foydalanuvchi holati yangilandi: %d -> %s", chatID, "register_name")
+	state.UserStates.Unlock()
+}
+
+func HandleRegister(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
-	userID := msg.From.ID
+	text := msg.Text
 
-	db := config.GetDB()
-	if db == nil {
-		log.Println("Database connection issue")
-		return
-	}
+	state.UserStates.RLock()
+	currentState := state.UserStates.M[chatID]
+	state.UserStates.RUnlock()
 
-	user := storage.GetUserFromDB(int64(userID))
-	log.Printf("Registering user: %+v", user)
+	log.Printf("HandleRegister called for chat ID %d with state: %s and text: %s", chatID, currentState, text)
 
-	botInstance := config.GetBot()
-	if botInstance == nil {
-		log.Println("Bot instance issue")
-		return
-	}
+	switch currentState {
+	case "register_name":
+		log.Printf("Registering name for chat ID %d: %s", chatID, text)
+		tempUserData.Lock()
+		tempUserData.data[chatID] = &models.User{ID: chatID, Name: text}
+		tempUserData.Unlock()
 
-	// Check if the user is already fully registered
-	if user != nil && user.Name != "" && user.Phone != "" {
-		message := fmt.Sprintf("Assalomu alaykum, %s! Siz allaqachon ro'yxatdan o'tgansiz.", user.Name)
-		msgSend := tgbotapi.NewMessage(chatID, message)
+		reply := tgbotapi.NewMessage(chatID, "Telefon raqamingizni kiriting, iltimos.")
+		reply.ReplyMarkup = tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButtonContact("Telefon raqamni ulashish"),
+			),
+		)
 
-		if _, err := botInstance.Send(msgSend); err != nil {
-			log.Printf("Error sending message: %v", err)
+		_, err := config.GetBot().Send(reply)
+		if err != nil {
+			log.Printf("Telefon raqamini so'rashda xatolik: %v", err)
+			return
 		}
-		SelectBarber(chatID, botInstance)
-		return
-	}
 
-	// Handle the registration process
-	tempUserData.Lock()
-	defer tempUserData.Unlock()
+		state.UserStates.Lock()
+		state.UserStates.M[chatID] = "register_phone"
+		log.Printf("Foydalanuvchi holati yangilandi: %d -> %s", chatID, "register_phone")
+		state.UserStates.Unlock()
 
-	if user == nil {
-		user = &models.User{ID: int64(userID)}
-	}
-
-	if tempData, exists := tempUserData.data[chatID]; !exists || tempData.Name == "" {
-		// Save the name in temporary storage if it hasn't been set yet
-		tempUserData.data[chatID] = &models.User{Name: msg.Text}
-
-		// Prompt for phone number
-		message := "Assalomu alaykum, " + msg.Text + "! Endi telefon raqamingizni yuboring."
-		msgSend := tgbotapi.NewMessage(chatID, message)
-
-		contactButton := tgbotapi.NewKeyboardButtonContact("Telefon raqamni yuborish")
-		replyMarkup := tgbotapi.NewReplyKeyboard(tgbotapi.NewKeyboardButtonRow(contactButton))
-		msgSend.ReplyMarkup = replyMarkup
-
-		if _, err := botInstance.Send(msgSend); err != nil {
-			log.Printf("Error sending message: %v", err)
-		}
-	} else if tempData.Phone == "" {
-		// Check if the user sent their contact information
+	case "register_phone":
 		if msg.Contact != nil {
-			// Save the phone number in temporary storage
-			tempData.Phone = msg.Contact.PhoneNumber
+			phoneNumber := msg.Contact.PhoneNumber
+			log.Printf("Registering phone for chat ID %d: %s", chatID, phoneNumber)
+			tempUserData.Lock()
+			tempUserData.data[chatID].Phone = phoneNumber
+			user := tempUserData.data[chatID]
+			tempUserData.Unlock()
 
-			// Save the user data to the database
-			user.Name = tempData.Name
-			user.Phone = tempData.Phone
 			storage.SaveUserToDB(user)
+			
 
-			// Confirm registration
-			response := fmt.Sprintf("Muvaffaqiyatli ro'yxatdan o'tdingiz. Ismingiz: %s, Telefon: %s", user.Name, user.Phone)
-			msgSend := tgbotapi.NewMessage(chatID, response)
+			// Clear user state and temporary data
+			state.UserStates.Lock()
+			delete(state.UserStates.M, chatID)
+			log.Printf("Foydalanuvchi holati o'chirildi: %d", chatID)
+			state.UserStates.Unlock()
 
-			if _, err := botInstance.Send(msgSend); err != nil {
-				log.Printf("Error sending message: %v", err)
-			}
-
-			// Proceed to select barber
-			SelectBarber(chatID, botInstance)
-
-			// Clean up temporary data
+			tempUserData.Lock()
 			delete(tempUserData.data, chatID)
-		} else {
-			// Prompt for phone number again if it was not sent correctly
-			message := "Iltimos, telefon raqamingizni yuboring."
-			msgSend := tgbotapi.NewMessage(chatID, message)
+			tempUserData.Unlock()
 
-			contactButton := tgbotapi.NewKeyboardButtonContact("Telefon raqamni yuborish")
-			replyMarkup := tgbotapi.NewReplyKeyboard(tgbotapi.NewKeyboardButtonRow(contactButton))
-			msgSend.ReplyMarkup = replyMarkup
-
-			if _, err := botInstance.Send(msgSend); err != nil {
-				log.Printf("Error sending message: %v", err)
+			// Send confirmation message
+			msg := tgbotapi.NewMessage(chatID, "Ro'yxatdan muvaffaqiyatli o'tdingiz.")
+			_, err := config.GetBot().Send(msg)
+			if err != nil {
+				log.Printf("Tasdiq xabarini yuborishda xatolik: %v", err)
+				return
 			}
+
+			// Select barber after registration
+			SelectBarber(chatID, config.GetBot())
+		} else {
+			msg := tgbotapi.NewMessage(chatID, "Telefon raqamingizni ulashish uchun tugmani bosing.")
+			msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
+				tgbotapi.NewKeyboardButtonRow(
+					tgbotapi.NewKeyboardButtonContact("Telefon raqamni ulashish"),
+				),
+			)
+			config.GetBot().Send(msg)
 		}
 	}
 }

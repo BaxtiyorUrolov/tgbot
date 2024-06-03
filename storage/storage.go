@@ -258,4 +258,25 @@ func CompleteOrder(barberName, orderDate, orderTime string) error {
 	return nil
 }
 
+func BarberType(ID int) string {
+	db := config.GetDB()
+	if db == nil {
+		log.Println("Database connection is nil")
+		return ""
+	}
+
+	var adminType string
+	err := db.QueryRow("SELECT admin FROM barbers WHERE id = $1", ID).Scan(&adminType)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("User with ID %d not found in barbers table", ID)
+		} else {
+			log.Printf("Error querying barbers table: %v", err)
+		}
+		return adminType
+	}
+
+	fmt.Println(adminType)
+	return adminType
+}
 
